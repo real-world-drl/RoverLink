@@ -1,0 +1,14 @@
+#pragma once
+
+#include <stdint.h>
+#include "esp_err.h"
+
+// Initializes PCNT units for both wheel encoders.
+// 2x quadrature decoding to match stock firmware's PPR figure.
+esp_err_t encoder_init(void);
+
+// Cumulative ticks since boot. Sign convention: positive = forward rotation
+// of that wheel (after CONFIG_UGV_ENCODER_*_INVERT is applied). Safe from
+// any task context.
+int32_t encoder_left_ticks(void);
+int32_t encoder_right_ticks(void);

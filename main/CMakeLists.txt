@@ -1,0 +1,25 @@
+idf_component_register(
+    SRCS
+        "app_main.c"
+        "motor.c"
+        "encoder.c"
+        "pid.c"
+        "kinematics.c"
+        "comms.c"
+        "i2c_bus.c"
+        "ina219.c"
+        "qmi8658.c"
+        "ak09918.c"
+        "imu.c"
+    INCLUDE_DIRS "."
+    REQUIRES
+        driver
+        esp_timer
+        esp_wifi
+        esp_event
+        esp_netif
+        nvs_flash
+        mqtt
+        freertos
+        log
+)

@@ -1,0 +1,148 @@
+menu "UGV firmware"
+
+    config UGV_ROBOT_ID
+        string "Robot ID (used in MQTT topic prefix)"
+        default "ugv01"
+        help
+            Substituted into topics: ugv/<id>/v1/...
+
+    menu "WiFi"
+        config UGV_WIFI_SSID
+            string "WiFi SSID"
+            default "your-ssid"
+
+        config UGV_WIFI_PASS
+            string "WiFi password"
+            default "your-password"
+
+        config UGV_WIFI_MAX_RETRY
+            int "Max reconnect attempts before giving up"
+            default 20
+    endmenu
+
+    menu "MQTT"
+        config UGV_MQTT_BROKER_URI
+            string "Broker URI (e.g. mqtt://192.168.1.100:1883)"
+            default "mqtt://192.168.1.100:1883"
+
+        config UGV_MQTT_USERNAME
+            string "Username (blank for none)"
+            default ""
+
+        config UGV_MQTT_PASSWORD
+            string "Password (blank for none)"
+            default ""
+    endmenu
+
+    menu "Robot kinematics"
+        config UGV_WHEEL_DIAMETER_MM
+            int "Wheel diameter (mm)"
+            default 80
+            range 1 1000
+
+        config UGV_TRACK_WIDTH_MM
+            int "Track width / wheel separation (mm)"
+            default 172
+            range 1 2000
+
+        config UGV_ENCODER_PPR
+            int "Encoder pulses per wheel revolution (after gearing, 2x decode)"
+            default 1650
+            range 1 100000
+
+        config UGV_MOTOR_LEFT_INVERT
+            bool "Invert LEFT motor direction"
+            default n
+
+        config UGV_MOTOR_RIGHT_INVERT
+            bool "Invert RIGHT motor direction"
+            default n
+
+        config UGV_ENCODER_LEFT_INVERT
+            bool "Invert LEFT encoder direction"
+            default n
+
+        config UGV_ENCODER_RIGHT_INVERT
+            bool "Invert RIGHT encoder direction"
+            default n
+
+        config UGV_MAX_LINEAR_MPS_X100
+            int "Max |linear_x| (m/s * 100)"
+            default 200
+            help
+                Clamp on incoming cmd_vel. 200 = 2.0 m/s.
+
+        config UGV_MAX_ANGULAR_RPS_X100
+            int "Max |angular_z| (rad/s * 100)"
+            default 600
+            help
+                Clamp on incoming cmd_vel. 600 = 6.0 rad/s.
+    endmenu
+
+    menu "PID defaults"
+        config UGV_PID_KP_X1000
+            int "kp * 1000"
+            default 20000
+            help
+                Floating-point gains stored as integers here; converted at runtime.
+
+        config UGV_PID_KI_X1000
+            int "ki * 1000"
+            default 2000000
+
+        config UGV_PID_KD_X1000
+            int "kd * 1000"
+            default 0
+
+        config UGV_PID_OUTPUT_CLAMP
+            int "PID output clamp (PWM counts)"
+            default 255
+
+        config UGV_PID_DEADBAND
+            int "PWM deadband (output |x|<deadband => 0)"
+            default 23
+    endmenu
+
+    menu "Timing"
+        config UGV_CONTROL_HZ
+            int "Control loop rate (Hz)"
+            default 100
+            range 20 500
+
+        config UGV_TELEMETRY_HZ
+            int "Wheel telemetry rate (Hz)"
+            default 50
+            range 1 200
+
+        config UGV_BATTERY_HZ
+            int "Battery telemetry rate (Hz)"
+            default 2
+            range 1 50
+
+        config UGV_IMU_HZ
+            int "IMU sample / publish rate (Hz)"
+            default 100
+            range 10 500
+            help
+                The QMI8658 runs at 1 kHz internally; this is the polling
+                rate. The AK09918 magnetometer is fixed at 100 Hz; values
+                above 100 Hz will repeat mag samples (a "mag_fresh" flag
+                in the packet tells the host which samples are new).
+
+        config UGV_HEARTBEAT_TIMEOUT_MS
+            int "cmd_vel staleness timeout (ms)"
+            default 500
+            range 50 10000
+    endmenu
+
+    menu "Sensors"
+        config UGV_ENABLE_INA219
+            bool "Enable INA219 battery monitor"
+            default y
+
+        config UGV_ENABLE_IMU
+            bool "Enable QMI8658 + AK09918 IMU"
+            default y
+    endmenu
+
+endmenu
