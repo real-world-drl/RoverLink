@@ -1,0 +1,30 @@
+# ESP-IDF build output
+/build/
+/build_*/
+
+# Project sdkconfig is generated from sdkconfig.defaults and typically
+# contains developer-local overrides (WiFi password, MQTT URL, etc.).
+# Commit only sdkconfig.defaults.
+/sdkconfig
+/sdkconfig.old
+/sdkconfig.ci
+/sdkconfig.*.old
+
+# Managed components fetched by idf.py add-dependency
+/managed_components/
+/main/managed_components/
+
+# Editors / IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# clangd / ccls caches
+.cache/
+compile_commands.json
+
+# OS junk
+.DS_Store
+Thumbs.db
