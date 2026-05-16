@@ -14,8 +14,9 @@
 #include <stdint.h>
 
 #define UGV_TOPIC_VERSION    "v1"
-#define UGV_TOPIC_CMD_VEL    "cmd/vel"
-#define UGV_TOPIC_CMD_PID    "cmd/pid"
+#define UGV_TOPIC_CMD_VEL     "cmd/vel"
+#define UGV_TOPIC_CMD_PID     "cmd/pid"
+#define UGV_TOPIC_CMD_DISPLAY "cmd/display"
 #define UGV_TOPIC_TEL_WHEEL  "tel/wheel"
 #define UGV_TOPIC_TEL_IMU    "tel/imu"
 #define UGV_TOPIC_TEL_BATT   "tel/battery"
@@ -38,6 +39,19 @@ typedef struct __attribute__((packed)) {
     float deadband;               // |out| < deadband -> 0
 } ugv_cmd_pid_t;                  // 20 B
 
+// Host-published pose for the OLED display. The firmware also computes its
+// own (crude) estimate from wheels+IMU; if a fresh cmd/display packet hasn't
+// arrived within CONFIG_UGV_DISPLAY_HOST_TIMEOUT_MS the display falls back
+// to the firmware estimate.
+typedef struct __attribute__((packed)) {
+    uint64_t host_timestamp_us;
+    float    x;                   // m
+    float    y;                   // m
+    float    yaw;                 // rad
+    float    pitch;               // rad
+    float    roll;                // rad
+} ugv_cmd_display_t;              // 28 B
+
 typedef struct __attribute__((packed)) {
     uint64_t device_timestamp_us; // esp_timer_get_time()
     uint32_t seq;                 // monotonic
@@ -47,7 +61,7 @@ typedef struct __attribute__((packed)) {
     float    right_velocity_mps;
     float    left_setpoint_mps;
     float    right_setpoint_mps;
-} ugv_wheel_telem_t;              // 40 B
+} ugv_wheel_telem_t;              // 36 B
 
 typedef struct __attribute__((packed)) {
     uint64_t device_timestamp_us;
@@ -64,4 +78,14 @@ typedef struct __attribute__((packed)) {
     float    temp_c;
     uint8_t  mag_fresh;           // 1 if mag was updated this packet, else 0
     uint8_t  _pad[3];
-} ugv_imu_telem_t;                // 64 B
+} ugv_imu_telem_t;                // 56 B
+
+// Compile-time guards: if anyone reorders / adds a field, the size comment
+// above is wrong and the host parser will misalign. These _Static_asserts
+// fail the build instead of silently shipping a broken contract.
+_Static_assert(sizeof(ugv_cmd_vel_t)       == 16, "ugv_cmd_vel_t size drift");
+_Static_assert(sizeof(ugv_cmd_pid_t)       == 20, "ugv_cmd_pid_t size drift");
+_Static_assert(sizeof(ugv_cmd_display_t)   == 28, "ugv_cmd_display_t size drift");
+_Static_assert(sizeof(ugv_wheel_telem_t)   == 36, "ugv_wheel_telem_t size drift");
+_Static_assert(sizeof(ugv_battery_telem_t) == 16, "ugv_battery_telem_t size drift");
+_Static_assert(sizeof(ugv_imu_telem_t)     == 56, "ugv_imu_telem_t size drift");

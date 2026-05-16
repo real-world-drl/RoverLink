@@ -9,6 +9,7 @@
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_netif.h"
+#include "esp_timer.h"
 #include "esp_wifi.h"
 #include "mqtt_client.h"
 #include "nvs_flash.h"
@@ -20,12 +21,15 @@ static const char *TAG = "comms";
 
 static QueueHandle_t s_cmd_vel_q;
 static QueueHandle_t s_cmd_pid_q;
+static QueueHandle_t s_cmd_display_q;
+static volatile int64_t s_cmd_display_recv_us = 0;
 
 static esp_mqtt_client_handle_t s_mqtt;
 static volatile bool s_mqtt_connected = false;
 
 static char s_topic_cmd_vel[TOPIC_BUF_LEN];
 static char s_topic_cmd_pid[TOPIC_BUF_LEN];
+static char s_topic_cmd_display[TOPIC_BUF_LEN];
 static char s_topic_tel_wheel[TOPIC_BUF_LEN];
 static char s_topic_tel_imu[TOPIC_BUF_LEN];
 static char s_topic_tel_batt[TOPIC_BUF_LEN];
@@ -115,6 +119,17 @@ static void handle_incoming(const char *topic, int topic_len,
         ugv_cmd_pid_t v;
         memcpy(&v, data, sizeof(v));
         xQueueOverwrite(s_cmd_pid_q, &v);
+    } else if (topic_len == (int)strlen(s_topic_cmd_display) &&
+               memcmp(topic, s_topic_cmd_display, topic_len) == 0) {
+        if (data_len != sizeof(ugv_cmd_display_t)) {
+            ESP_LOGW(TAG, "cmd_display wrong size: %d (want %d)",
+                     data_len, (int)sizeof(ugv_cmd_display_t));
+            return;
+        }
+        ugv_cmd_display_t v;
+        memcpy(&v, data, sizeof(v));
+        xQueueOverwrite(s_cmd_display_q, &v);
+        s_cmd_display_recv_us = esp_timer_get_time();
     }
 }
 
@@ -126,6 +141,7 @@ static void mqtt_evt(void *arg, esp_event_base_t base, int32_t id, void *data) {
         s_mqtt_connected = true;
         esp_mqtt_client_subscribe(s_mqtt, s_topic_cmd_vel, 1);
         esp_mqtt_client_subscribe(s_mqtt, s_topic_cmd_pid, 1);
+        esp_mqtt_client_subscribe(s_mqtt, s_topic_cmd_display, 1);
         esp_mqtt_client_publish(s_mqtt, s_topic_status,
                                 UGV_STATUS_ONLINE, 0, 1, 1);
         break;
@@ -148,8 +164,9 @@ static void build_topics(void) {
 #define BUILD(buf, suffix) \
     snprintf((buf), TOPIC_BUF_LEN, "ugv/%s/%s/%s", \
              CONFIG_UGV_ROBOT_ID, UGV_TOPIC_VERSION, (suffix))
-    BUILD(s_topic_cmd_vel,   UGV_TOPIC_CMD_VEL);
-    BUILD(s_topic_cmd_pid,   UGV_TOPIC_CMD_PID);
+    BUILD(s_topic_cmd_vel,     UGV_TOPIC_CMD_VEL);
+    BUILD(s_topic_cmd_pid,     UGV_TOPIC_CMD_PID);
+    BUILD(s_topic_cmd_display, UGV_TOPIC_CMD_DISPLAY);
     BUILD(s_topic_tel_wheel, UGV_TOPIC_TEL_WHEEL);
     BUILD(s_topic_tel_imu,   UGV_TOPIC_TEL_IMU);
     BUILD(s_topic_tel_batt,  UGV_TOPIC_TEL_BATT);
@@ -158,6 +175,7 @@ static void build_topics(void) {
     ESP_LOGI(TAG, "topics:");
     ESP_LOGI(TAG, "  sub: %s", s_topic_cmd_vel);
     ESP_LOGI(TAG, "  sub: %s", s_topic_cmd_pid);
+    ESP_LOGI(TAG, "  sub: %s", s_topic_cmd_display);
     ESP_LOGI(TAG, "  pub: %s", s_topic_tel_wheel);
     ESP_LOGI(TAG, "  pub: %s", s_topic_tel_imu);
     ESP_LOGI(TAG, "  pub: %s", s_topic_tel_batt);
@@ -200,8 +218,9 @@ esp_err_t comms_init(void) {
         ESP_ERROR_CHECK(err);
     }
 
-    s_cmd_vel_q = xQueueCreate(1, sizeof(ugv_cmd_vel_t));
-    s_cmd_pid_q = xQueueCreate(1, sizeof(ugv_cmd_pid_t));
+    s_cmd_vel_q     = xQueueCreate(1, sizeof(ugv_cmd_vel_t));
+    s_cmd_pid_q     = xQueueCreate(1, sizeof(ugv_cmd_pid_t));
+    s_cmd_display_q = xQueueCreate(1, sizeof(ugv_cmd_display_t));
 
     build_topics();
 
@@ -218,6 +237,14 @@ bool comms_take_cmd_vel(ugv_cmd_vel_t *out) {
 
 bool comms_take_cmd_pid(ugv_cmd_pid_t *out) {
     return xQueueReceive(s_cmd_pid_q, out, 0) == pdTRUE;
+}
+
+bool comms_take_cmd_display(ugv_cmd_display_t *out) {
+    return xQueueReceive(s_cmd_display_q, out, 0) == pdTRUE;
+}
+
+int64_t comms_cmd_display_recv_us(void) {
+    return s_cmd_display_recv_us;
 }
 
 void comms_publish_wheel(const ugv_wheel_telem_t *t) {

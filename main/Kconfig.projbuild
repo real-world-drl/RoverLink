@@ -140,9 +140,68 @@ menu "UGV firmware"
             bool "Enable INA219 battery monitor"
             default y
 
+        config UGV_INA219_VOLTAGE_SCALE_X1000
+            int "INA219 bus-voltage scale ×1000"
+            depends on UGV_ENABLE_INA219
+            default 19260
+            help
+                The Waveshare General Driver appears to put a ~19:1 voltage
+                divider in front of the INA219 bus pin, so the chip reads
+                ~1/20 of the actual battery voltage. Tune this against a
+                multimeter at boot: scale = (V_real / V_read) × 1000.
+                Default 19260 gives ×19.26, matching 11.94 V actual at
+                a 0.620 V read. Set to 1000 (×1.0) if your board has no
+                divider.
+
         config UGV_ENABLE_IMU
             bool "Enable QMI8658 + AK09918 IMU"
             default y
+
+        comment "IMU body-frame axis inversion (display/odometry only)"
+            depends on UGV_ENABLE_IMU
+
+        config UGV_IMU_BODY_INVERT_X
+            bool "Invert IMU X axis"
+            depends on UGV_ENABLE_IMU
+            default n
+
+        config UGV_IMU_BODY_INVERT_Y
+            bool "Invert IMU Y axis"
+            depends on UGV_ENABLE_IMU
+            default n
+
+        config UGV_IMU_BODY_INVERT_Z
+            bool "Invert IMU Z axis"
+            depends on UGV_ENABLE_IMU
+            default n
+            help
+                Applies only to the firmware's display-side odometry —
+                flip whichever IMU axes are needed to make body-frame
+                roll/pitch read 0 when the bot is level. Raw published
+                tel/imu data is unaffected (host calibrates that).
+    endmenu
+
+    menu "Display"
+        config UGV_ENABLE_DISPLAY
+            bool "Enable SSD1306 OLED display"
+            default y
+
+        config UGV_DISPLAY_HZ
+            int "Display refresh rate (Hz)"
+            depends on UGV_ENABLE_DISPLAY
+            default 1
+            range 1 10
+
+        config UGV_DISPLAY_HOST_TIMEOUT_MS
+            int "Host cmd/display staleness timeout (ms)"
+            depends on UGV_ENABLE_DISPLAY
+            default 2000
+            range 100 60000
+            help
+                If no cmd/display packet has arrived within this window,
+                the display falls back to firmware-computed odometry.
+                The top-right indicator on the OLED shows H (host) or L
+                (local/firmware).
     endmenu
 
 endmenu

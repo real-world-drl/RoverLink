@@ -7,7 +7,12 @@
 static const char *TAG = "encoder";
 
 // Stock Waveshare General Driver pin assignment.
-// GPIO 34 and 35 are input-only on ESP32; fine for encoder inputs.
+// GPIO 34 and 35 are input-only on ESP32; fine for encoder inputs, but they
+// have no internal pull-up/pull-down circuitry. The IDF pulse_cnt driver
+// unconditionally calls gpio_pullup_en() on the edge/level GPIOs and logs a
+// "GPIO number error" for these two pins at init — cosmetic, no flag to
+// suppress it. Encoder still works provided the board has external pull-ups
+// on the AENCA/AENCB lines (the Waveshare board does).
 #define PIN_AENCA  35
 #define PIN_AENCB  34
 #define PIN_BENCA  27

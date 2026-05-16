@@ -14,6 +14,11 @@ esp_err_t comms_init(void);
 // commands are silently dropped, which is the desired behavior for cmd_vel.)
 bool comms_take_cmd_vel(ugv_cmd_vel_t *out);
 bool comms_take_cmd_pid(ugv_cmd_pid_t *out);
+bool comms_take_cmd_display(ugv_cmd_display_t *out);
+
+// Device-clock timestamp of the most recent cmd/display reception (0 if
+// none yet this session). The display task uses this for staleness checks.
+int64_t comms_cmd_display_recv_us(void);
 
 // Publishes (QoS 0, no retain). Drops silently if MQTT isn't connected yet.
 void comms_publish_wheel(const ugv_wheel_telem_t *t);

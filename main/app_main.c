@@ -9,12 +9,14 @@
 #include "sdkconfig.h"
 
 #include "comms.h"
+#include "display.h"
 #include "encoder.h"
 #include "i2c_bus.h"
 #include "imu.h"
 #include "ina219.h"
 #include "kinematics.h"
 #include "motor.h"
+#include "odometry.h"
 #include "pid.h"
 #include "ugv_packets.h"
 
@@ -108,6 +110,9 @@ static void control_task(void *arg) {
         const float out_l = pid_compute(&s_pid_l, v_set_l, v_meas_l, now_us);
         const float out_r = pid_compute(&s_pid_r, v_set_r, v_meas_r, now_us);
 
+        // Feed wheel velocities into the firmware odometry (display only).
+        if (dt > 0.0f) odometry_update_wheels(v_meas_l, v_meas_r, dt);
+
         if (stale) {
             motor_stop_all();
             pid_reset(&s_pid_l);
@@ -175,11 +180,30 @@ static void telemetry_task(void *arg) {
 // --- IMU task -----------------------------------------------------------
 
 #ifdef CONFIG_UGV_ENABLE_IMU
+// Body-frame axis signs for the display-side odometry. Kconfig bools emit
+// no macro when unset; promote them to ±1.0 here.
+#ifdef CONFIG_UGV_IMU_BODY_INVERT_X
+#  define IMU_BODY_SX (-1.0f)
+#else
+#  define IMU_BODY_SX (+1.0f)
+#endif
+#ifdef CONFIG_UGV_IMU_BODY_INVERT_Y
+#  define IMU_BODY_SY (-1.0f)
+#else
+#  define IMU_BODY_SY (+1.0f)
+#endif
+#ifdef CONFIG_UGV_IMU_BODY_INVERT_Z
+#  define IMU_BODY_SZ (-1.0f)
+#else
+#  define IMU_BODY_SZ (+1.0f)
+#endif
+
 static void imu_task(void *arg) {
     (void)arg;
 
     uint32_t seq = 0;
     const TickType_t period = pdMS_TO_TICKS(1000 / CONFIG_UGV_IMU_HZ);
+    const float dt = 1.0f / (float)CONFIG_UGV_IMU_HZ;
     TickType_t next_wake = xTaskGetTickCount();
 
     for (;;) {
@@ -188,6 +212,16 @@ static void imu_task(void *arg) {
         float acc[3], gyr[3], mag[3], temp_c = NAN;
         bool mag_fresh = false;
         if (imu_read(acc, gyr, mag, &temp_c, &mag_fresh) != ESP_OK) continue;
+
+        // Feed body-frame-corrected values into firmware odometry. Raw chip
+        // values still get published verbatim below — host does its own
+        // calibration on the published telemetry.
+        odometry_update_imu(IMU_BODY_SX * acc[0],
+                            IMU_BODY_SY * acc[1],
+                            IMU_BODY_SZ * acc[2],
+                            IMU_BODY_SX * gyr[0],
+                            IMU_BODY_SY * gyr[1],
+                            IMU_BODY_SZ * gyr[2], dt);
 
         const ugv_imu_telem_t pkt = {
             .device_timestamp_us = (uint64_t)esp_timer_get_time(),
@@ -228,6 +262,13 @@ void app_main(void) {
         ESP_LOGW(TAG, "IMU init failed — IMU telemetry disabled");
     }
 #endif
+#ifdef CONFIG_UGV_ENABLE_DISPLAY
+    if (display_init() != ESP_OK) {
+        ESP_LOGW(TAG, "OLED init failed — display disabled");
+    }
+#endif
+
+    odometry_init(CONFIG_UGV_TRACK_WIDTH_MM / 1000.0f);
 
     kinematics_init(&s_kin,
                     CONFIG_UGV_WHEEL_DIAMETER_MM / 1000.0f,
@@ -257,5 +298,8 @@ void app_main(void) {
     xTaskCreatePinnedToCore(telemetry_task, "telemetry", 4096, NULL,  8, NULL, 0);
 #ifdef CONFIG_UGV_ENABLE_IMU
     xTaskCreatePinnedToCore(imu_task,       "imu",       4096, NULL, 10, NULL, 0);
+#endif
+#ifdef CONFIG_UGV_ENABLE_DISPLAY
+    xTaskCreatePinnedToCore(display_task,   "display",   4096, NULL,  5, NULL, 0);
 #endif
 }

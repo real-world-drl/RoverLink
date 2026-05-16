@@ -76,7 +76,8 @@ esp_err_t motor_init(void) {
         .intr_type    = GPIO_INTR_DISABLE,
     };
     ESP_ERROR_CHECK(gpio_config(&dir_cfg));
-    motor_stop_all();
+    gpio_set_level(PIN_AIN1, 0); gpio_set_level(PIN_AIN2, 0);
+    gpio_set_level(PIN_BIN1, 0); gpio_set_level(PIN_BIN2, 0);
 
     const ledc_timer_config_t timer_cfg = {
         .speed_mode      = PWM_MODE,

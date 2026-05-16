@@ -11,6 +11,9 @@ idf_component_register(
         "qmi8658.c"
         "ak09918.c"
         "imu.c"
+        "oled.c"
+        "odometry.c"
+        "display.c"
     INCLUDE_DIRS "."
     REQUIRES
         driver
