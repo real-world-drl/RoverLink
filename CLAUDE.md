@@ -4,11 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-ESP-IDF v5.1 firmware for the **lower computer** on a Waveshare UGV
-(General Driver board, ESP32 WROOM-32). User-owned rewrite of the stock
-Arduino firmware at `../ugv_base_general` (upstream reference only —
-not editable, not pushable). Talks to an upper computer (Pi 5, planned)
-over binary MQTT.
+**RoverLink** — ESP-IDF v5.1 firmware for the **lower computer** on a
+small differential-drive rover. Currently runs on the Waveshare General
+Driver board (ESP32 WROOM-32) but pin assignments are configurable, so
+not tied to that hardware. User-owned rewrite of the stock Arduino
+firmware at `../ugv_base_general` (upstream reference only — not
+editable, not pushable). Talks to an upper computer (Pi 5, planned)
+over binary MQTT and/or UART.
 
 For build instructions, Kconfig reference, MQTT contract, and bring-up
 checklist, see `README.md` — don't duplicate it here.

@@ -1,10 +1,12 @@
-# ugv_idf
+# RoverLink
 
-ESP-IDF firmware for the Waveshare General Driver board (ESP32 WROOM-32),
-running as the lower computer on a UGV. Speaks binary MQTT and/or UART to
-an upper computer (Raspberry Pi 5, planned, with iPhone VIO for pose).
-Independent rewrite of the stock Arduino firmware — see
-[Attribution](#attribution) below.
+ESP-IDF firmware for the lower computer on a small differential-drive
+rover. Speaks binary MQTT and/or UART to an upper computer (planned:
+Raspberry Pi 5 with iPhone VIO for pose). Hardware-targeted at the
+Waveshare General Driver board (ESP32 WROOM-32) but the architecture
+is platform-agnostic — pin assignments live in `main/Kconfig.projbuild`
+and a handful of source files. Independent rewrite of the stock Arduino
+firmware — see [Attribution](#attribution) below.
 
 ## Build / flash / monitor
 
