@@ -107,11 +107,32 @@ static void control_task(void *arg) {
         last_right_ticks = right_ticks;
         last_us          = now_us;
 
-        const float out_l = pid_compute(&s_pid_l, v_set_l, v_meas_l, now_us);
-        const float out_r = pid_compute(&s_pid_r, v_set_r, v_meas_r, now_us);
+        float out_l, out_r;
+#if CONFIG_UGV_OPEN_LOOP
+        // No encoder feedback — map setpoint directly to PWM, clamp,
+        // apply the same deadband the PID uses to avoid sub-stall hum.
+        const float scale = CONFIG_UGV_OPEN_LOOP_PWM_PER_MPS_X10 / 10.0f;
+        const float clamp = (float)CONFIG_UGV_PID_OUTPUT_CLAMP;
+        const float deadb = (float)CONFIG_UGV_PID_DEADBAND;
+        out_l = clampf(v_set_l * scale, -clamp, clamp);
+        out_r = clampf(v_set_r * scale, -clamp, clamp);
+        if (fabsf(out_l) < deadb) out_l = 0.0f;
+        if (fabsf(out_r) < deadb) out_r = 0.0f;
+#else
+        out_l = pid_compute(&s_pid_l, v_set_l, v_meas_l, now_us);
+        out_r = pid_compute(&s_pid_r, v_set_r, v_meas_r, now_us);
+#endif
 
         // Feed wheel velocities into the firmware odometry (display only).
-        if (dt > 0.0f) odometry_update_wheels(v_meas_l, v_meas_r, dt);
+        // Open-loop: use setpoints as a stand-in for the measurement we don't
+        // have, so x/y still trend (with whatever error the bot accumulates).
+        if (dt > 0.0f) {
+#if CONFIG_UGV_OPEN_LOOP
+            odometry_update_wheels(v_set_l, v_set_r, dt);
+#else
+            odometry_update_wheels(v_meas_l, v_meas_r, dt);
+#endif
+        }
 
         if (stale) {
             motor_stop_all();
@@ -162,7 +183,7 @@ static void telemetry_task(void *arg) {
             comms_publish_wheel(&wt);
         }
 
-        if ((tick++ % batt_div) == 0) {
+        if ((tick % batt_div) == 0) {
             float v = NAN, i = NAN;
 #ifdef CONFIG_UGV_ENABLE_INA219
             ina219_read(&v, &i);
@@ -174,6 +195,11 @@ static void telemetry_task(void *arg) {
             };
             comms_publish_battery(&bt);
         }
+        // 1 Hz encoder GPIO/PCNT diagnostic.
+        if ((tick % CONFIG_UGV_TELEMETRY_HZ) == 0) {
+            encoder_debug_log();
+        }
+        tick++;
     }
 }
 

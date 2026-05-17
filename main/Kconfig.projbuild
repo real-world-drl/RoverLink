@@ -79,6 +79,32 @@ menu "UGV firmware"
                 Clamp on incoming cmd_vel. 600 = 6.0 rad/s.
     endmenu
 
+    menu "Control mode"
+        config UGV_OPEN_LOOP
+            bool "Open-loop control (no PID, no encoder feedback)"
+            default n
+            help
+                Skip the PID entirely and map commanded wheel velocity
+                directly to PWM via a configurable scale. Use when the bot
+                has no encoders. Trajectory tracking is inaccurate (depends
+                on load, battery, slip) but the bot will move roughly
+                proportional to cmd_vel. Firmware odometry uses the
+                commanded setpoints as a stand-in for measured motion, so
+                the OLED still shows non-zero x/y — treat as dead reckoning,
+                not truth.
+
+        config UGV_OPEN_LOOP_PWM_PER_MPS_X10
+            int "Open-loop scale: PWM counts per m/s × 10"
+            depends on UGV_OPEN_LOOP
+            default 5120
+            help
+                PWM applied per m/s of commanded wheel velocity, stored ×10
+                so it's an integer in Kconfig. Default 5120 = ×512, i.e.
+                ~0.5 m/s commanded saturates PWM at 255. Tune by driving
+                the bot at a known cmd_vel and timing it over a known
+                distance: scale_x10 = round(255 / actual_mps × 10).
+    endmenu
+
     menu "PID defaults"
         config UGV_PID_KP_X1000
             int "kp * 1000"
@@ -143,15 +169,13 @@ menu "UGV firmware"
         config UGV_INA219_VOLTAGE_SCALE_X1000
             int "INA219 bus-voltage scale ×1000"
             depends on UGV_ENABLE_INA219
-            default 19260
+            default 1000
             help
-                The Waveshare General Driver appears to put a ~19:1 voltage
-                divider in front of the INA219 bus pin, so the chip reads
-                ~1/20 of the actual battery voltage. Tune this against a
-                multimeter at boot: scale = (V_real / V_read) × 1000.
-                Default 19260 gives ×19.26, matching 11.94 V actual at
-                a 0.620 V read. Set to 1000 (×1.0) if your board has no
-                divider.
+                Linear scale applied to the INA219 bus voltage reading
+                before display. Default 1000 = ×1.0 (chip reading is the
+                actual battery voltage). Tune against a multimeter if your
+                board has a voltage divider in front of the chip:
+                scale = (V_real / V_read) × 1000.
 
         config UGV_ENABLE_IMU
             bool "Enable QMI8658 + AK09918 IMU"

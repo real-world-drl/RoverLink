@@ -12,3 +12,8 @@ esp_err_t encoder_init(void);
 // any task context.
 int32_t encoder_left_ticks(void);
 int32_t encoder_right_ticks(void);
+
+// Diagnostic: logs raw GPIO levels of all four encoder pins plus the raw
+// PCNT counts. Call periodically (e.g. once a second) to see whether the
+// encoder lines are actually toggling.
+void    encoder_debug_log(void);
