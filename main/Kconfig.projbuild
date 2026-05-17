@@ -6,7 +6,50 @@ menu "UGV firmware"
         help
             Substituted into topics: ugv/<id>/v1/...
 
+    menu "Transports"
+        config UGV_ENABLE_MQTT
+            bool "Enable MQTT over WiFi"
+            default y
+            help
+                Brings up WiFi STA + the esp-mqtt client. Disable to save
+                ~1.5 s of boot time and ~40 KB of RAM when only the UART
+                link is needed.
+
+        config UGV_ENABLE_UART_LINK
+            bool "Enable UART link to host"
+            default y
+            help
+                Direct binary link to the upper computer on UART2 — same
+                packet structs as MQTT, framed with sync + type + length +
+                CRC8. When both transports are enabled, a recent UART RX
+                frame masks MQTT cmd_vel for UGV_UART_PREEMPT_MS to
+                prevent stale broker packets from stomping on live wire
+                commands.
+
+        config UGV_UART_BAUD
+            int "UART baud rate"
+            depends on UGV_ENABLE_UART_LINK
+            default 921600
+
+        config UGV_UART_TX_PIN
+            int "UART TX GPIO"
+            depends on UGV_ENABLE_UART_LINK
+            default 19
+
+        config UGV_UART_RX_PIN
+            int "UART RX GPIO"
+            depends on UGV_ENABLE_UART_LINK
+            default 18
+
+        config UGV_UART_PREEMPT_MS
+            int "UART preempt window over MQTT (ms)"
+            depends on UGV_ENABLE_UART_LINK
+            default 1000
+            range 0 60000
+    endmenu
+
     menu "WiFi"
+        depends on UGV_ENABLE_MQTT
         config UGV_WIFI_SSID
             string "WiFi SSID"
             default "your-ssid"
@@ -21,6 +64,7 @@ menu "UGV firmware"
     endmenu
 
     menu "MQTT"
+        depends on UGV_ENABLE_MQTT
         config UGV_MQTT_BROKER_URI
             string "Broker URI (e.g. mqtt://192.168.1.100:1883)"
             default "mqtt://192.168.1.100:1883"

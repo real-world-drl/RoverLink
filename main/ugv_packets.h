@@ -25,6 +25,24 @@
 #define UGV_STATUS_ONLINE    "online"
 #define UGV_STATUS_OFFLINE   "offline"
 
+// --- UART transport framing -------------------------------------------------
+// On the UART link, packets are framed as:
+//   [UGV_UART_SYNC] [type:1] [len:1] [payload:len] [crc8:1]
+// where crc8 covers (type, len, payload) using poly 0x07, init 0x00.
+// `type` identifies which packed struct the payload is. The host and
+// firmware both use the same struct definitions below as the payload.
+#define UGV_UART_SYNC 0xA5
+
+typedef enum {
+    UGV_PKT_CMD_VEL     = 0x01,
+    UGV_PKT_CMD_PID     = 0x02,
+    UGV_PKT_CMD_DISPLAY = 0x03,
+    UGV_PKT_TEL_WHEEL   = 0x10,
+    UGV_PKT_TEL_IMU     = 0x11,
+    UGV_PKT_TEL_BATT    = 0x12,
+    UGV_PKT_STATUS      = 0x20,
+} ugv_pkt_type_t;
+
 typedef struct __attribute__((packed)) {
     uint64_t host_timestamp_us;   // host clock, used by host for latency stats
     float    linear_x;            // m/s, +forward

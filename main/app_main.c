@@ -18,6 +18,7 @@
 #include "motor.h"
 #include "odometry.h"
 #include "pid.h"
+#include "uart_link.h"
 #include "ugv_packets.h"
 
 static const char *TAG = "ugv";
@@ -180,7 +181,12 @@ static void telemetry_task(void *arg) {
                 .left_setpoint_mps  = snap.left_set,
                 .right_setpoint_mps = snap.right_set,
             };
+#ifdef CONFIG_UGV_ENABLE_MQTT
             comms_publish_wheel(&wt);
+#endif
+#ifdef CONFIG_UGV_ENABLE_UART_LINK
+            uart_link_publish_wheel(&wt);
+#endif
         }
 
         if ((tick % batt_div) == 0) {
@@ -193,7 +199,12 @@ static void telemetry_task(void *arg) {
                 .voltage_v = v,
                 .current_a = i,
             };
+#ifdef CONFIG_UGV_ENABLE_MQTT
             comms_publish_battery(&bt);
+#endif
+#ifdef CONFIG_UGV_ENABLE_UART_LINK
+            uart_link_publish_battery(&bt);
+#endif
         }
         // 1 Hz encoder GPIO/PCNT diagnostic.
         if ((tick % CONFIG_UGV_TELEMETRY_HZ) == 0) {
@@ -258,7 +269,12 @@ static void imu_task(void *arg) {
             .temp_c = temp_c,
             .mag_fresh = mag_fresh ? 1 : 0,
         };
+#ifdef CONFIG_UGV_ENABLE_MQTT
         comms_publish_imu(&pkt);
+#endif
+#ifdef CONFIG_UGV_ENABLE_UART_LINK
+        uart_link_publish_imu(&pkt);
+#endif
     }
 }
 #endif
@@ -268,9 +284,19 @@ static void imu_task(void *arg) {
 void app_main(void) {
     ESP_LOGI(TAG, "UGV firmware boot");
 
+    // Shared command queues — must exist before any transport tries to push.
+    comms_queues_init();
+
+#ifdef CONFIG_UGV_ENABLE_MQTT
     if (comms_init() != ESP_OK) {
-        ESP_LOGE(TAG, "comms init failed — entering safe idle");
+        ESP_LOGE(TAG, "MQTT comms init failed — continuing");
     }
+#endif
+#ifdef CONFIG_UGV_ENABLE_UART_LINK
+    if (uart_link_init() != ESP_OK) {
+        ESP_LOGE(TAG, "UART link init failed — continuing");
+    }
+#endif
 
     ESP_ERROR_CHECK(motor_init());
     ESP_ERROR_CHECK(encoder_init());

@@ -3,26 +3,75 @@
 #include <string.h>
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
-#include "freertos/event_groups.h"
 #include "freertos/queue.h"
+#include "esp_log.h"
+#include "esp_timer.h"
+#include "sdkconfig.h"
+
+#ifdef CONFIG_UGV_ENABLE_MQTT
+#include "freertos/event_groups.h"
 #include "freertos/task.h"
 #include "esp_event.h"
-#include "esp_log.h"
 #include "esp_netif.h"
-#include "esp_timer.h"
 #include "esp_wifi.h"
 #include "mqtt_client.h"
 #include "nvs_flash.h"
-#include "sdkconfig.h"
+#endif
 
 static const char *TAG = "comms";
 
-#define TOPIC_BUF_LEN 96
+// ---- Shared command queues (independent of any transport) --------------
 
 static QueueHandle_t s_cmd_vel_q;
 static QueueHandle_t s_cmd_pid_q;
 static QueueHandle_t s_cmd_display_q;
 static volatile int64_t s_cmd_display_recv_us = 0;
+
+// Forward declaration: the UART module exports this when compiled in.
+// Fallback stub keeps the preempt check well-defined when UART is off.
+#ifdef CONFIG_UGV_ENABLE_UART_LINK
+extern bool uart_link_recent_rx(void);
+#else
+static inline bool uart_link_recent_rx(void) { return false; }
+#endif
+
+void comms_queues_init(void) {
+    if (s_cmd_vel_q == NULL) {
+        s_cmd_vel_q     = xQueueCreate(1, sizeof(ugv_cmd_vel_t));
+        s_cmd_pid_q     = xQueueCreate(1, sizeof(ugv_cmd_pid_t));
+        s_cmd_display_q = xQueueCreate(1, sizeof(ugv_cmd_display_t));
+    }
+}
+
+void comms_push_cmd_vel(const ugv_cmd_vel_t *v, bool from_uart) {
+    if (!from_uart && uart_link_recent_rx()) {
+        // UART is currently the live control channel; drop the MQTT push
+        // so a stale broker packet can't stomp on a fresh wire packet.
+        return;
+    }
+    xQueueOverwrite(s_cmd_vel_q, v);
+}
+
+void comms_push_cmd_pid(const ugv_cmd_pid_t *v) {
+    xQueueOverwrite(s_cmd_pid_q, v);
+}
+
+void comms_push_cmd_display(const ugv_cmd_display_t *v) {
+    xQueueOverwrite(s_cmd_display_q, v);
+    s_cmd_display_recv_us = esp_timer_get_time();
+}
+
+bool comms_take_cmd_vel    (ugv_cmd_vel_t     *out) { return xQueueReceive(s_cmd_vel_q,     out, 0) == pdTRUE; }
+bool comms_take_cmd_pid    (ugv_cmd_pid_t     *out) { return xQueueReceive(s_cmd_pid_q,     out, 0) == pdTRUE; }
+bool comms_take_cmd_display(ugv_cmd_display_t *out) { return xQueueReceive(s_cmd_display_q, out, 0) == pdTRUE; }
+
+int64_t comms_cmd_display_recv_us(void) { return s_cmd_display_recv_us; }
+
+// ---- MQTT transport ----------------------------------------------------
+
+#ifdef CONFIG_UGV_ENABLE_MQTT
+
+#define TOPIC_BUF_LEN 96
 
 static esp_mqtt_client_handle_t s_mqtt;
 static volatile bool s_mqtt_connected = false;
@@ -34,8 +83,6 @@ static char s_topic_tel_wheel[TOPIC_BUF_LEN];
 static char s_topic_tel_imu[TOPIC_BUF_LEN];
 static char s_topic_tel_batt[TOPIC_BUF_LEN];
 static char s_topic_status[TOPIC_BUF_LEN];
-
-// ---- WiFi --------------------------------------------------------------
 
 static EventGroupHandle_t s_wifi_events;
 #define WIFI_CONNECTED_BIT BIT0
@@ -95,8 +142,6 @@ static esp_err_t wifi_init_sta(void) {
     return (bits & WIFI_CONNECTED_BIT) ? ESP_OK : ESP_FAIL;
 }
 
-// ---- MQTT --------------------------------------------------------------
-
 static void handle_incoming(const char *topic, int topic_len,
                             const char *data,  int data_len) {
     if (topic_len == (int)strlen(s_topic_cmd_vel) &&
@@ -108,7 +153,7 @@ static void handle_incoming(const char *topic, int topic_len,
         }
         ugv_cmd_vel_t v;
         memcpy(&v, data, sizeof(v));
-        xQueueOverwrite(s_cmd_vel_q, &v);
+        comms_push_cmd_vel(&v, /*from_uart=*/false);
     } else if (topic_len == (int)strlen(s_topic_cmd_pid) &&
                memcmp(topic, s_topic_cmd_pid, topic_len) == 0) {
         if (data_len != sizeof(ugv_cmd_pid_t)) {
@@ -118,7 +163,7 @@ static void handle_incoming(const char *topic, int topic_len,
         }
         ugv_cmd_pid_t v;
         memcpy(&v, data, sizeof(v));
-        xQueueOverwrite(s_cmd_pid_q, &v);
+        comms_push_cmd_pid(&v);
     } else if (topic_len == (int)strlen(s_topic_cmd_display) &&
                memcmp(topic, s_topic_cmd_display, topic_len) == 0) {
         if (data_len != sizeof(ugv_cmd_display_t)) {
@@ -128,8 +173,7 @@ static void handle_incoming(const char *topic, int topic_len,
         }
         ugv_cmd_display_t v;
         memcpy(&v, data, sizeof(v));
-        xQueueOverwrite(s_cmd_display_q, &v);
-        s_cmd_display_recv_us = esp_timer_get_time();
+        comms_push_cmd_display(&v);
     }
 }
 
@@ -167,10 +211,10 @@ static void build_topics(void) {
     BUILD(s_topic_cmd_vel,     UGV_TOPIC_CMD_VEL);
     BUILD(s_topic_cmd_pid,     UGV_TOPIC_CMD_PID);
     BUILD(s_topic_cmd_display, UGV_TOPIC_CMD_DISPLAY);
-    BUILD(s_topic_tel_wheel, UGV_TOPIC_TEL_WHEEL);
-    BUILD(s_topic_tel_imu,   UGV_TOPIC_TEL_IMU);
-    BUILD(s_topic_tel_batt,  UGV_TOPIC_TEL_BATT);
-    BUILD(s_topic_status,    UGV_TOPIC_STATUS);
+    BUILD(s_topic_tel_wheel,   UGV_TOPIC_TEL_WHEEL);
+    BUILD(s_topic_tel_imu,     UGV_TOPIC_TEL_IMU);
+    BUILD(s_topic_tel_batt,    UGV_TOPIC_TEL_BATT);
+    BUILD(s_topic_status,      UGV_TOPIC_STATUS);
 #undef BUILD
     ESP_LOGI(TAG, "topics:");
     ESP_LOGI(TAG, "  sub: %s", s_topic_cmd_vel);
@@ -207,8 +251,6 @@ static esp_err_t mqtt_init(void) {
     return esp_mqtt_client_start(s_mqtt);
 }
 
-// ---- Public API --------------------------------------------------------
-
 esp_err_t comms_init(void) {
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -218,10 +260,6 @@ esp_err_t comms_init(void) {
         ESP_ERROR_CHECK(err);
     }
 
-    s_cmd_vel_q     = xQueueCreate(1, sizeof(ugv_cmd_vel_t));
-    s_cmd_pid_q     = xQueueCreate(1, sizeof(ugv_cmd_pid_t));
-    s_cmd_display_q = xQueueCreate(1, sizeof(ugv_cmd_display_t));
-
     build_topics();
 
     if (wifi_init_sta() != ESP_OK) {
@@ -229,22 +267,6 @@ esp_err_t comms_init(void) {
         return ESP_FAIL;
     }
     return mqtt_init();
-}
-
-bool comms_take_cmd_vel(ugv_cmd_vel_t *out) {
-    return xQueueReceive(s_cmd_vel_q, out, 0) == pdTRUE;
-}
-
-bool comms_take_cmd_pid(ugv_cmd_pid_t *out) {
-    return xQueueReceive(s_cmd_pid_q, out, 0) == pdTRUE;
-}
-
-bool comms_take_cmd_display(ugv_cmd_display_t *out) {
-    return xQueueReceive(s_cmd_display_q, out, 0) == pdTRUE;
-}
-
-int64_t comms_cmd_display_recv_us(void) {
-    return s_cmd_display_recv_us;
 }
 
 void comms_publish_wheel(const ugv_wheel_telem_t *t) {
@@ -265,6 +287,14 @@ void comms_publish_imu(const ugv_imu_telem_t *t) {
                             (const char *)t, sizeof(*t), 0, 0);
 }
 
-bool comms_mqtt_connected(void) {
-    return s_mqtt_connected;
-}
+bool comms_mqtt_connected(void) { return s_mqtt_connected; }
+
+#else  // CONFIG_UGV_ENABLE_MQTT not defined ----------------------------
+
+esp_err_t comms_init(void) { return ESP_OK; }
+void comms_publish_wheel  (const ugv_wheel_telem_t   *t) { (void)t; }
+void comms_publish_battery(const ugv_battery_telem_t *t) { (void)t; }
+void comms_publish_imu    (const ugv_imu_telem_t     *t) { (void)t; }
+bool comms_mqtt_connected (void) { return false; }
+
+#endif

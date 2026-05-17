@@ -6,6 +6,7 @@ idf_component_register(
         "pid.c"
         "kinematics.c"
         "comms.c"
+        "uart_link.c"
         "i2c_bus.c"
         "ina219.c"
         "qmi8658.c"

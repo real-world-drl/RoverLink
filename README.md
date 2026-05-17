@@ -28,12 +28,29 @@ updates `idf-env.json` so `export.sh` will pick it up automatically.
 
 All tunables live under `idf.py menuconfig` → **UGV firmware**.
 
-### Identity & networking
+### Identity
 | Option | Purpose |
 |---|---|
 | `UGV_ROBOT_ID` | Substituted into all MQTT topics: `ugv/<id>/v1/...` |
+
+### Transports
+| Option | Default | Purpose |
+|---|---|---|
+| `UGV_ENABLE_MQTT` | y | WiFi + MQTT transport. Disable to skip WiFi association on boot and save ~40 KB RAM. |
+| `UGV_ENABLE_UART_LINK` | y | Direct binary link to the upper computer on UART2. |
+| `UGV_UART_BAUD` | 921600 | UART line rate. |
+| `UGV_UART_TX_PIN` / `UGV_UART_RX_PIN` | 19 / 18 | UART2 pins. Default is the chip's natural UART2 mapping; these GPIOs are unused on the General Driver since the servo bus isn't driven by this firmware. |
+| `UGV_UART_PREEMPT_MS` | 1000 | While the UART has received a valid frame within this window, MQTT cmd_vel is ignored. Prevents stale broker packets from overriding a live tethered control stream. |
+
+### WiFi (only if `UGV_ENABLE_MQTT=y`)
+| Option | Purpose |
+|---|---|
 | `UGV_WIFI_SSID`, `UGV_WIFI_PASS` | WiFi STA credentials |
 | `UGV_WIFI_MAX_RETRY` | Reconnect attempts before giving up |
+
+### MQTT (only if `UGV_ENABLE_MQTT=y`)
+| Option | Purpose |
+|---|---|
 | `UGV_MQTT_BROKER_URI` | e.g. `mqtt://mqtt-server:1883` |
 | `UGV_MQTT_USERNAME`, `UGV_MQTT_PASSWORD` | Blank = anonymous |
 
@@ -84,11 +101,12 @@ below — and the change persists across boots because the topic is retained.
 | `UGV_DISPLAY_HZ` | 1 | OLED refresh rate. |
 | `UGV_DISPLAY_HOST_TIMEOUT_MS` | 2000 | Switches OLED from host pose (`H` indicator) to firmware odometry (`L`) after this. |
 
-## MQTT contract
+## Wire contract (shared by MQTT and UART)
 
 All packets are **little-endian packed structs**, defined in
 `main/ugv_packets.h`. Share that header verbatim with the host. Sizes
-are guarded with `_Static_assert` so any drift fails the build.
+are guarded with `_Static_assert` so any drift fails the build. The
+Python tools in `tools/ugv_packets.py` mirror the same constants.
 
 Topics (with `<id>` = `UGV_ROBOT_ID`):
 
@@ -121,6 +139,41 @@ Key semantic points:
 - **`status`** uses MQTT LWT — the broker auto-publishes `offline` if
   the bot drops, no firmware code needed.
 
+### UART transport
+
+Same six packets and one status string; one type byte selects which.
+On the wire:
+
+```
+[0xA5 sync] [type:1] [len:1] [payload:len] [crc8:1]   ; CRC over type+len+payload
+```
+
+Type IDs (matching `ugv_pkt_type_t` in firmware):
+
+| ID | Direction | Packet |
+|---|---|---|
+| 0x01 | host → bot | `ugv_cmd_vel_t` |
+| 0x02 | host → bot | `ugv_cmd_pid_t` |
+| 0x03 | host → bot | `ugv_cmd_display_t` |
+| 0x10 | bot → host | `ugv_wheel_telem_t` |
+| 0x11 | bot → host | `ugv_imu_telem_t` |
+| 0x12 | bot → host | `ugv_battery_telem_t` |
+| 0x20 | bot → host | status string ("online" / "offline") |
+
+CRC8 uses poly 0x07, init 0x00 — same algorithm in firmware
+(`uart_link.c:crc8`) and Python (`tools/ugv_packets.py:crc8`).
+
+The RX FSM logs counters every ~5 s: `rx_ok`, `rx_bad_crc`, `rx_bad_len`,
+`rx_bad_type`, `rx_resync`. During bring-up, watch these on the serial
+monitor to confirm framing health.
+
+**Pi 5 UART gotcha:** the Pi's primary UART (`/dev/ttyAMA0` on header
+pins 8/10) is shared with the Bluetooth HCI by default. Either disable
+BT (`dtoverlay=disable-bt` in `/boot/firmware/config.txt`, then use
+`/dev/ttyAMA0`) or enable a second UART (`dtoverlay=uart0`, use
+`/dev/ttyAMA1`). Skipping this step is the #1 reason "the Pi can't see
+the bot."
+
 ## OLED layout (128×32, 5×7 font)
 
 ```
@@ -151,17 +204,37 @@ V: 12.34                  ← INA219 battery voltage
 
 ## Tools
 
-`tools/cmd_vel_test.py` — publishes a fixed cmd_vel at a configurable
-rate. Useful for bench testing motors and verifying packet round-trip.
+`tools/cmd_vel_test.py` — publishes a fixed cmd_vel over **MQTT** at a
+configurable rate.
 
 ```bash
 pip install paho-mqtt
 ./tools/cmd_vel_test.py --broker mqtt-server --linear 0.1 --hz 10
 ```
 
-At `--hz 2` (default) you're right at the 500 ms heartbeat boundary, so
-expect intermittent stutter from network jitter. For sustained motion
-testing use `--hz 10+`.
+`tools/uart_cmd_vel.py` — same but over **UART** (`pyserial`). Useful
+once the Pi 5 is wired in.
+
+```bash
+pip install pyserial
+./tools/uart_cmd_vel.py --port /dev/ttyAMA0 --linear 0.1 --hz 10
+```
+
+`tools/uart_sniff.py` — decodes telemetry frames coming back over UART
+into readable lines. Cross-checks that the bot is publishing without
+needing a broker.
+
+```bash
+./tools/uart_sniff.py --port /dev/ttyAMA0 --quiet-imu
+```
+
+`tools/ugv_packets.py` — shared constants, struct formats, framing, and
+CRC8 used by both UART tools. Edit this if you ever change the wire
+contract on the firmware side.
+
+At `--hz 2` (default for `cmd_vel_test.py`) you're right at the 500 ms
+heartbeat boundary, so expect intermittent stutter from network jitter.
+For sustained motion testing use `--hz 10+`.
 
 ## Architecture
 
@@ -170,18 +243,24 @@ testing use `--hz 10+`.
   computes PWM (PID in closed-loop, direct scale in open-loop), drives
   motors, snapshots state for telemetry.
 - **`telemetry_task`** (50 Hz, core 0): consumes the control snapshot,
-  publishes `tel/wheel`; once a second also reads INA219 and publishes
-  `tel/battery` + runs the encoder GPIO/PCNT diagnostic log.
-- **`imu_task`** (100 Hz, core 0): reads QMI8658 + AK09918, publishes
-  `tel/imu`, feeds body-frame-corrected values into the firmware
-  odometry.
+  fans `tel/wheel` out to whichever transports are enabled; once a
+  second also reads INA219 and publishes `tel/battery` + runs the
+  encoder GPIO/PCNT diagnostic log.
+- **`imu_task`** (100 Hz, core 0): reads QMI8658 + AK09918, fans
+  `tel/imu` out to enabled transports, feeds body-frame-corrected
+  values into the firmware odometry.
 - **`display_task`** (1 Hz, core 0): renders OLED, prefers host pose
   via `cmd/display` if recent, otherwise uses firmware odometry.
+- **`uart_rx_task`** (core 0, only if `UGV_ENABLE_UART_LINK=y`): runs
+  the UART framing FSM on inbound bytes; on a valid frame calls
+  `comms_push_cmd_*` so UART commands feed the same queues as MQTT.
 
 The PID lives in `pid.[ch]`, kinematics in `kinematics.[ch]`, firmware
 odometry in `odometry.[ch]`. Sensor drivers (`ina219`, `qmi8658`,
 `ak09918`, `imu`, `oled`) all sit on the shared `i2c_bus` (GPIO 32 SDA,
-33 SCL, 400 kHz). MQTT and WiFi live in `comms.[ch]`.
+33 SCL, 400 kHz). MQTT + WiFi live in `comms.[ch]`; UART transport
+lives in `uart_link.[ch]`. The shared command queues stay in `comms.c`
+and are populated by both transports via `comms_push_cmd_*` helpers.
 
 ## Known limitations
 
