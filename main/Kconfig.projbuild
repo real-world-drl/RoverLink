@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Peter Bohm
+
 menu "UGV firmware"
 
     config UGV_ROBOT_ID

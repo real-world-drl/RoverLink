@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Peter Bohm
+
 #pragma once
 
 // Wire format between firmware and host. Little-endian. Share this header

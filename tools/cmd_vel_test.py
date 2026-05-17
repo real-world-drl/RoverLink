@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Peter Bohm
 """Send fixed cmd_vel at a configurable rate to a UGV bot over MQTT.
 
 Wire format (must match main/ugv_packets.h::ugv_cmd_vel_t, 16 B little-endian):

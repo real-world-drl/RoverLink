@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Peter Bohm
+
 #include "qmi8658.h"
 #include "i2c_bus.h"
 

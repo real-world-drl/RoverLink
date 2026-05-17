@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Peter Bohm
 """Send a fixed cmd_vel over UART to a UGV bot.
 
 Mirror of cmd_vel_test.py (which uses MQTT) — same flags, different

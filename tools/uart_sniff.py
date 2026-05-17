@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Peter Bohm
 """Decode UGV UART telemetry frames in real time.
 
 Implements the same RX state machine as main/uart_link.c so you can verify

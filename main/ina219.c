@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Peter Bohm
+
 #include "ina219.h"
 #include "i2c_bus.h"
 

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Peter Bohm
+
 """Wire-format constants and struct layouts for the UGV firmware.
 
 Hand-mirrored from main/ugv_packets.h. Drift between this file and the

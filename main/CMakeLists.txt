@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Peter Bohm
+
 idf_component_register(
     SRCS
         "app_main.c"

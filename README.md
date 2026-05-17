@@ -1,9 +1,10 @@
 # ugv_idf
 
 ESP-IDF firmware for the Waveshare General Driver board (ESP32 WROOM-32),
-running as the lower computer on a UGV. Speaks binary MQTT to an upper
-computer (Raspberry Pi 5, planned, with iPhone VIO for pose). Replaces
-the stock Arduino firmware in the upstream `ugv_base_general` repo.
+running as the lower computer on a UGV. Speaks binary MQTT and/or UART to
+an upper computer (Raspberry Pi 5, planned, with iPhone VIO for pose).
+Independent rewrite of the stock Arduino firmware — see
+[Attribution](#attribution) below.
 
 ## Build / flash / monitor
 
@@ -281,3 +282,18 @@ and are populated by both transports via `comms_push_cmd_*` helpers.
 - **GPIO 34/35 lack internal pull-ups** (input-only pads on ESP32). The
   IDF PCNT driver tries to enable them and logs an error per pin at
   boot — cosmetic, no flag to suppress.
+
+## Attribution
+
+This project targets the same hardware as Waveshare's open-source
+[`ugv_base_general`](https://github.com/effectsmachine/ugv_base_general)
+firmware (GPL-3.0) and uses it as a reference for pin assignments,
+sensor I²C addresses, and chip configuration values. No source code
+was copied; this is an independent ESP-IDF rewrite with a different
+architecture (FreeRTOS tasks, binary MQTT/UART, no Arduino runtime).
+Thanks to the Waveshare team for documenting the board's wiring well
+enough that an independent firmware was feasible.
+
+## License
+
+Apache License 2.0 — see [LICENSE](LICENSE).

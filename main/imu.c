@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Peter Bohm
+
 #include "imu.h"
 #include "ak09918.h"
 #include "qmi8658.h"
