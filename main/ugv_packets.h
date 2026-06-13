@@ -24,6 +24,10 @@
 #define UGV_TOPIC_TEL_IMU    "tel/imu"
 #define UGV_TOPIC_TEL_BATT   "tel/battery"
 #define UGV_TOPIC_STATUS     "status"
+// Control-plane only: payload is a plain UTF-8 URL string (not a packed
+// struct), since OTA is a one-shot action, not part of the binary wire
+// telemetry. MQTT transport only — OTA needs WiFi regardless.
+#define UGV_TOPIC_CMD_OTA    "cmd/ota"
 
 #define UGV_STATUS_ONLINE    "online"
 #define UGV_STATUS_OFFLINE   "offline"

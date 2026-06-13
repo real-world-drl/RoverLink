@@ -1,0 +1,11 @@
+# RoverLink partition table — two OTA app slots for wireless updates.
+# Requires a >=4MB flash chip (ESP32-WROOM-32 is normally 4MB; confirm
+# with `esptool.py flash_id`). App slots are 1.5 MB each — generous over
+# the current ~1 MB image. otadata holds the active-slot + rollback state.
+#
+# Name,     Type, SubType,  Offset,    Size
+nvs,        data, nvs,      0x9000,    0x6000
+otadata,    data, ota,      0xf000,    0x2000
+phy_init,   data, phy,      0x11000,   0x1000
+ota_0,      app,  ota_0,    0x20000,   0x190000
+ota_1,      app,  ota_1,    0x1b0000,  0x190000

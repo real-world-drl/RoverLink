@@ -19,6 +19,7 @@
 #include "esp_wifi.h"
 #include "mqtt_client.h"
 #include "nvs_flash.h"
+#include "ota.h"
 #endif
 
 static const char *TAG = "comms";
@@ -86,6 +87,7 @@ static char s_topic_tel_wheel[TOPIC_BUF_LEN];
 static char s_topic_tel_imu[TOPIC_BUF_LEN];
 static char s_topic_tel_batt[TOPIC_BUF_LEN];
 static char s_topic_status[TOPIC_BUF_LEN];
+static char s_topic_cmd_ota[TOPIC_BUF_LEN];
 
 static EventGroupHandle_t s_wifi_events;
 #define WIFI_CONNECTED_BIT BIT0
@@ -177,6 +179,10 @@ static void handle_incoming(const char *topic, int topic_len,
         ugv_cmd_display_t v;
         memcpy(&v, data, sizeof(v));
         comms_push_cmd_display(&v);
+    } else if (topic_len == (int)strlen(s_topic_cmd_ota) &&
+               memcmp(topic, s_topic_cmd_ota, topic_len) == 0) {
+        // Payload is a plain URL string, not a packed struct.
+        ota_start(data, data_len);
     }
 }
 
@@ -189,8 +195,12 @@ static void mqtt_evt(void *arg, esp_event_base_t base, int32_t id, void *data) {
         esp_mqtt_client_subscribe(s_mqtt, s_topic_cmd_vel, 1);
         esp_mqtt_client_subscribe(s_mqtt, s_topic_cmd_pid, 1);
         esp_mqtt_client_subscribe(s_mqtt, s_topic_cmd_display, 1);
+        esp_mqtt_client_subscribe(s_mqtt, s_topic_cmd_ota, 1);
         esp_mqtt_client_publish(s_mqtt, s_topic_status,
                                 UGV_STATUS_ONLINE, 0, 1, 1);
+        // Reaching the broker is our health proof: confirm the running
+        // image so the OTA rollback watchdog stands down.
+        ota_mark_healthy();
         break;
     case MQTT_EVENT_DISCONNECTED:
         ESP_LOGW(TAG, "mqtt disconnected");
@@ -218,11 +228,13 @@ static void build_topics(void) {
     BUILD(s_topic_tel_imu,     UGV_TOPIC_TEL_IMU);
     BUILD(s_topic_tel_batt,    UGV_TOPIC_TEL_BATT);
     BUILD(s_topic_status,      UGV_TOPIC_STATUS);
+    BUILD(s_topic_cmd_ota,     UGV_TOPIC_CMD_OTA);
 #undef BUILD
     ESP_LOGI(TAG, "topics:");
     ESP_LOGI(TAG, "  sub: %s", s_topic_cmd_vel);
     ESP_LOGI(TAG, "  sub: %s", s_topic_cmd_pid);
     ESP_LOGI(TAG, "  sub: %s", s_topic_cmd_display);
+    ESP_LOGI(TAG, "  sub: %s", s_topic_cmd_ota);
     ESP_LOGI(TAG, "  pub: %s", s_topic_tel_wheel);
     ESP_LOGI(TAG, "  pub: %s", s_topic_tel_imu);
     ESP_LOGI(TAG, "  pub: %s", s_topic_tel_batt);

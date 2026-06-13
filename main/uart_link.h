@@ -7,8 +7,10 @@
 #include "esp_err.h"
 #include "ugv_packets.h"
 
-// Sets up UART2 (default GPIO 19 TX / 18 RX, 921600 8N1) and spawns the
-// RX framing task. Idempotent — calling twice is a no-op.
+// Sets up the link UART (default UART0 on the board's RX/TX header,
+// GPIO 1 TX / 3 RX, 921600 8N1) and spawns the RX framing task. Port and
+// pins are set via CONFIG_UGV_UART_PORT/TX_PIN/RX_PIN. Idempotent —
+// calling twice is a no-op.
 esp_err_t uart_link_init(void);
 
 // TX side: serialize the packet into [sync][type][len][payload][crc8] and

@@ -40,9 +40,10 @@ All tunables live under `idf.py menuconfig` → **UGV firmware**.
 | Option | Default | Purpose |
 |---|---|---|
 | `UGV_ENABLE_MQTT` | y | WiFi + MQTT transport. Disable to skip WiFi association on boot and save ~40 KB RAM. |
-| `UGV_ENABLE_UART_LINK` | y | Direct binary link to the upper computer on UART2. |
+| `UGV_ENABLE_UART_LINK` | y | Direct binary link to the upper computer. |
+| `UGV_UART_PORT` | 0 | UART peripheral. The board's RX/TX header is wired to UART0 (U0TX=GPIO1, U0RX=GPIO3), so the link lives there — which requires the serial console be disabled (see below). |
 | `UGV_UART_BAUD` | 921600 | UART line rate. |
-| `UGV_UART_TX_PIN` / `UGV_UART_RX_PIN` | 19 / 18 | UART2 pins. Default is the chip's natural UART2 mapping; these GPIOs are unused on the General Driver since the servo bus isn't driven by this firmware. |
+| `UGV_UART_TX_PIN` / `UGV_UART_RX_PIN` | 1 / 3 | U0TX/U0RX on the board's RX/TX header. Do **not** use GPIO 17 (motor AIN2) or 16 (right encoder B) — both are taken. |
 | `UGV_UART_PREEMPT_MS` | 1000 | While the UART has received a valid frame within this window, MQTT cmd_vel is ignored. Prevents stale broker packets from overriding a live tethered control stream. |
 
 ### WiFi (only if `UGV_ENABLE_MQTT=y`)
@@ -68,7 +69,7 @@ All tunables live under `idf.py menuconfig` → **UGV firmware**.
 |---|---|---|
 | `UGV_WHEEL_DIAMETER_MM` | 80 | |
 | `UGV_TRACK_WIDTH_MM` | 172 | Wheel separation. |
-| `UGV_ENCODER_PPR` | 1650 | After gearing, 2x quadrature decode. Only used in closed-loop. |
+| `UGV_ENCODER_PPR` | 2100 | PCNT ticks per wheel revolution, including the firmware's 2x decode. Current bot: N20 hall encoder, 7 pulses/ch × 1:150 gearbox = 1050 single-channel, ×2 decode = 2100. Only used in closed-loop. |
 | `UGV_MOTOR_LEFT_INVERT` / `_RIGHT_INVERT` | n | Flip if a wheel spins the wrong way at `--linear 0.1`. |
 | `UGV_ENCODER_LEFT_INVERT` / `_RIGHT_INVERT` | n | Flip if tick count goes backwards when wheel rolls forward by hand. |
 | `UGV_MAX_LINEAR_MPS_X100` | 200 (= 2.0 m/s) | Clamp on incoming cmd_vel. |
@@ -133,8 +134,8 @@ Key semantic points:
   firmware's odometry estimate within ~2 s.
 - **`tel/wheel`** carries cumulative `left_ticks` and `right_ticks` so
   the host integrates exact wheel distance independent of network jitter
-  (no encoders on the current bot — these stay at 0). Velocity fields
-  are nice-to-have, not authoritative.
+  (encoders are installed and counting on the current bot). Velocity
+  fields are nice-to-have, not authoritative.
 - **`tel/imu`** is raw chip-frame readings — accel in m/s², gyro in
   rad/s, mag in µT. A `mag_fresh` flag tells the host whether the mag
   fields were updated this packet or repeat the previous reading (mag
@@ -167,8 +168,24 @@ CRC8 uses poly 0x07, init 0x00 — same algorithm in firmware
 (`uart_link.c:crc8`) and Python (`tools/ugv_packets.py:crc8`).
 
 The RX FSM logs counters every ~5 s: `rx_ok`, `rx_bad_crc`, `rx_bad_len`,
-`rx_bad_type`, `rx_resync`. During bring-up, watch these on the serial
-monitor to confirm framing health.
+`rx_bad_type`, `rx_resync`. With the link on UART0 the serial console is
+off (see below), so these go nowhere by default — use `tools/uart_sniff.py`
+on the host to confirm framing health, or temporarily re-enable the console
+(on a different UART) when debugging.
+
+**The serial console is disabled** (`CONFIG_ESP_CONSOLE_NONE=y`). The
+board breaks out its RX/TX header to U0RX/U0TX, the same UART the ESP-IDF
+console used to own — so the console had to give up the line for the
+binary link to use it. Runtime logs (`ESP_LOG*`) are dropped; rely on MQTT
+or reflash with the console pointed at a spare UART when you need them.
+Flashing over the **USB connector** is unaffected — the onboard USB-UART
+chip drives DTR→IO0 / RTS→EN to auto-enter download mode. Flashing over
+the **bare Pi UART header** does *not* auto-reset (the Pi's UART exposes
+no DTR/RTS), so you must enter download mode by hand (hold BOOT, tap EN,
+release BOOT) or wire EN/IO0 to Pi GPIOs — or use OTA over WiFi.
+The first-stage ROM bootloader still emits a few bytes at 115200 on boot;
+these look like garbage to a host reading at 921600 and are absorbed by
+the `0xA5`/CRC8 resync.
 
 **Pi 5 UART gotcha:** the Pi's primary UART (`/dev/ttyAMA0` on header
 pins 8/10) is shared with the Bluetooth HCI by default. Either disable
@@ -231,6 +248,13 @@ needing a broker.
 ./tools/uart_sniff.py --port /dev/ttyAMA0 --quiet-imu
 ```
 
+`tools/ota_push.py` — serves a firmware `.bin` over HTTP and publishes
+the OTA trigger over MQTT (see [Firmware updates](#firmware-updates-ota)).
+
+```bash
+./tools/ota_push.py --broker 192.168.1.100 --id ugv01 --bin build/roverlink.bin
+```
+
 `tools/ugv_packets.py` — shared constants, struct formats, framing, and
 CRC8 used by both UART tools. Edit this if you ever change the wire
 contract on the firmware side.
@@ -239,16 +263,58 @@ At `--hz 2` (default for `cmd_vel_test.py`) you're right at the 500 ms
 heartbeat boundary, so expect intermittent stutter from network jitter.
 For sustained motion testing use `--hz 10+`.
 
+## Firmware updates (OTA)
+
+The rover updates itself over WiFi — no serial cable once it's assembled.
+The flash is partitioned into two app slots (`partitions.csv`); an update
+is written to the *inactive* slot, then the bot reboots into it.
+
+**One-time bootstrap (requires serial access once).** OTA changes the
+partition table, and a partition table can only be installed by a full
+serial flash in download mode — it cannot be applied over the air from a
+pre-OTA build. So the *first* flash of this OTA-capable firmware must be
+done over serial. Since the board's RX/TX header has no auto-reset (see
+[the console note](#uart-transport)), enter download mode by hand:
+
+1. Confirm the chip is ≥4 MB: `esptool.py -p <port> flash_id` (WROOM-32 is
+   normally 4 MB). OTA needs two app slots and will not fit in 2 MB.
+2. Hold **BOOT**, tap **EN/RST**, release **BOOT** to enter download mode.
+3. Flash everything (bootloader + partition table + otadata + app):
+   `idf.py -p <port> flash`, or the `esptool.py ... write_flash` line that
+   `idf.py build` prints.
+4. **Verify it connects to MQTT before sealing the rover** — a bootstrap
+   image that can't reach the broker will roll back in a loop (see below).
+
+**Every update after that is wireless:**
+
+```bash
+idf.py build
+./tools/ota_push.py --broker 192.168.1.100 --id ugv01 --bin build/roverlink.bin
+```
+
+`ota_push.py` serves `roverlink.bin` over HTTP from your machine and
+publishes the URL to `ugv/<id>/v1/cmd/ota`. The firmware downloads it via
+`esp_https_ota`, writes the spare slot, and reboots. HTTP (not HTTPS) is
+used on the LAN — keep the broker and this server off untrusted networks.
+
+**Automatic rollback.** With `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`, a
+freshly OTA'd image boots in *pending* state and must prove itself by
+reconnecting to the broker within `UGV_OTA_VALIDATE_TIMEOUT_MS` (default
+120 s). If it can't — bad build, wrong WiFi, crash loop — the bootloader
+reverts to the previous slot on the next reboot. This is the safety net
+that makes updating an unreachable rover safe. The flip side: the very
+first bootstrap image has nothing to roll back *to*, so verify it works
+while you still have serial access.
+
 ## Architecture
 
 - **`control_task`** (100 Hz, core 1): drains `cmd/vel` + `cmd/pid`
-  queues, applies kinematics, reads encoders (no-op without hardware),
-  computes PWM (PID in closed-loop, direct scale in open-loop), drives
-  motors, snapshots state for telemetry.
+  queues, applies kinematics, reads encoders, computes PWM (PID in
+  closed-loop, direct scale in open-loop), drives motors, snapshots
+  state for telemetry.
 - **`telemetry_task`** (50 Hz, core 0): consumes the control snapshot,
   fans `tel/wheel` out to whichever transports are enabled; once a
-  second also reads INA219 and publishes `tel/battery` + runs the
-  encoder GPIO/PCNT diagnostic log.
+  second also reads INA219 and publishes `tel/battery`.
 - **`imu_task`** (100 Hz, core 0): reads QMI8658 + AK09918, fans
   `tel/imu` out to enabled transports, feeds body-frame-corrected
   values into the firmware odometry.
@@ -267,10 +333,10 @@ and are populated by both transports via `comms_push_cmd_*` helpers.
 
 ## Known limitations
 
-- **No wheel encoders on the current bot.** Open-loop mode is on. When
-  the encoder-equipped bot arrives, set `UGV_OPEN_LOOP=n` in menuconfig
-  — closed-loop code is already in and tested-ish (the PID was seeded
-  but never tuned against real wheels).
+- **Wheel encoders are installed and functional** on the current bot;
+  closed-loop mode (`UGV_OPEN_LOOP=n`) is active. The PID gains were
+  seeded but not yet tuned against the real wheels — expect to adjust
+  them. `UGV_OPEN_LOOP=y` remains available as a fallback.
 - **Yaw drift** in firmware odometry: pure gyro integration, no mag
   fusion. Visible over minutes of motion. Not a problem in practice
   because authoritative pose comes from the host (iPhone VIO via Pi5);

@@ -103,16 +103,3 @@ int32_t encoder_right_ticks(void) {
     pcnt_unit_get_count(s_unit_right, &c);
     return ENC_RIGHT_INVERT ? -(int32_t)c : (int32_t)c;
 }
-
-void encoder_debug_log(void) {
-    const int la = gpio_get_level(PIN_AENCA);
-    const int lb = gpio_get_level(PIN_AENCB);
-    const int ra = gpio_get_level(PIN_BENCA);
-    const int rb = gpio_get_level(PIN_BENCB);
-    int cl = 0, cr = 0;
-    pcnt_unit_get_count(s_unit_left,  &cl);
-    pcnt_unit_get_count(s_unit_right, &cr);
-    ESP_LOGI(TAG, "GPIO AENCA(35)=%d AENCB(34)=%d  BENCA(27)=%d BENCB(16)=%d "
-                  "| raw PCNT  L=%d R=%d",
-             la, lb, ra, rb, cl, cr);
-}

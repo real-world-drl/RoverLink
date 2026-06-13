@@ -16,7 +16,7 @@
 
 static const char *TAG = "uart_link";
 
-#define UART_PORT       UART_NUM_2
+#define UART_PORT       ((uart_port_t)CONFIG_UGV_UART_PORT)
 #define UART_RX_BUF     1024
 #define UART_TX_BUF     0           // 0 = blocking writes; we send one frame at a time
 
@@ -234,8 +234,8 @@ esp_err_t uart_link_init(void) {
     xTaskCreatePinnedToCore(uart_rx_task, "uart_rx", 3072, NULL, 7, NULL, 0);
     s_started = true;
 
-    ESP_LOGI(TAG, "UART2 ready: TX=%d RX=%d @ %d baud (preempt window %d ms)",
-             CONFIG_UGV_UART_TX_PIN, CONFIG_UGV_UART_RX_PIN,
+    ESP_LOGI(TAG, "UART%d ready: TX=%d RX=%d @ %d baud (preempt window %d ms)",
+             CONFIG_UGV_UART_PORT, CONFIG_UGV_UART_TX_PIN, CONFIG_UGV_UART_RX_PIN,
              CONFIG_UGV_UART_BAUD, CONFIG_UGV_UART_PREEMPT_MS);
     uart_link_publish_status(UGV_STATUS_ONLINE);
     return ESP_OK;
