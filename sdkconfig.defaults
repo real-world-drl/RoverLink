@@ -24,3 +24,20 @@ CONFIG_COMPILER_WARN_WRITE_STRINGS=y
 
 # Logs
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+
+# Serial console off: the board's RX/TX header is wired to UART0, which now
+# carries the binary link (CONFIG_UGV_UART_PORT=0). A UART can't share log
+# text with binary frames, so the console gives up the line. Runtime logs
+# are dropped — use MQTT, or repoint the console at a spare UART to debug.
+CONFIG_ESP_CONSOLE_NONE=y
+
+# Flash + OTA: 4 MB part with two app slots (partitions.csv) for wireless
+# updates, plus rollback so an image that can't get back online reverts.
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESPTOOLPY_HEADER_FLASHSIZE_UPDATE=y
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
+# Allow plain-HTTP OTA on the trusted LAN (no TLS cert to manage).
+CONFIG_ESP_HTTPS_OTA_ALLOW_HTTP=y

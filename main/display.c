@@ -87,9 +87,10 @@ void display_task(void *arg) {
 #ifdef CONFIG_UGV_ENABLE_INA219
         float v_bat = NAN, i_bat = NAN;
         if (ina219_read(&v_bat, &i_bat) == ESP_OK && !isnan(v_bat)) {
-            snprintf(line, sizeof(line), "V: %5.2f", v_bat);
+            snprintf(line, sizeof(line), "V:%5.2f I:%c%4.2f",
+                     v_bat, sign_of(i_bat), fabsf(i_bat));
         } else {
-            snprintf(line, sizeof(line), "V: -----");
+            snprintf(line, sizeof(line), "V: ---- I: ----");
         }
         oled_text(3, 0, line);
 #endif

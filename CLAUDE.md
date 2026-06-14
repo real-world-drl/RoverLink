@@ -31,8 +31,8 @@ log lines appear at boot when flashed.
 `app_main.c` spawns five FreeRTOS tasks: `control_task` (100 Hz, core 1
 — drains cmd queues, applies kinematics, runs PID or open-loop PWM,
 drives motors), `telemetry_task` (50 Hz, core 0 — fans out wheel
-telem to all enabled transports; once a second also reads INA219 and
-prints the encoder GPIO diagnostic), `imu_task` (100 Hz, core 0 —
+telem to all enabled transports; once a second also reads INA219),
+`imu_task` (100 Hz, core 0 —
 reads QMI8658+AK09918, fans out `tel/imu`, feeds firmware odometry),
 `display_task` (1 Hz, core 0 — renders OLED with host data if recent,
 else firmware odometry), and `uart_rx_task` (core 0 — UART2 framing
@@ -104,6 +104,37 @@ third transport, add a third `#ifdef`'d block at each call site rather
 than building a fan-out abstraction. It's grep-able and the cost is
 ~6 lines.
 
+### UART link runs on UART0 and the serial console is disabled
+The board's RX/TX header is wired to U0RX/U0TX — the same UART the
+ESP-IDF console used to own. A UART can't carry both log text and binary
+frames, so the link took UART0 (`CONFIG_UGV_UART_PORT=0`, pins 1/3) and
+the console is off (`CONFIG_ESP_CONSOLE_NONE=y`). Consequences: `ESP_LOG*`
+output is dropped at runtime (use MQTT, or point the console at a spare
+UART when debugging); flashing still works (ROM download mode is
+independent of the console); a few first-stage-bootloader bytes at 115200
+hit the host at boot and are absorbed by the `0xA5`/CRC8 resync. The port
+is now a Kconfig option, so switching back to UART2 is config-only. Note
+the old pins 17/16 collided with motor `AIN2` (GPIO 17) and the right
+encoder `BENCB` (GPIO 16) — don't route the link there.
+
+### OTA updates are how the assembled rover is reflashed
+The board's only accessible header is the RX/TX one (no USB, no buttons
+without disassembly), so post-bring-up updates go over WiFi. Flash is a
+two-slot OTA layout (`partitions.csv`, 4 MB chip) and `main/ota.c` runs
+`esp_https_ota` from a URL delivered over MQTT (`cmd/ota`, a plain string
+topic — the one documented exception to the packed-binary wire contract).
+Key invariants if you touch this:
+- **Rollback is armed** (`CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`). A new
+  image boots PENDING_VERIFY; `ota_init()` arms a watchdog and
+  `ota_mark_healthy()` (called from `comms.c` on MQTT connect) confirms it.
+  If MQTT can't connect within `UGV_OTA_VALIDATE_TIMEOUT_MS`, the image
+  rolls back. Don't add an early `esp_ota_mark_app_valid` on a path that
+  doesn't actually prove host reachability — that defeats the safety net.
+- The **partition table can't be changed over the air** — switching layouts
+  (or the initial OTA bring-up) needs one serial flash in download mode.
+- HTTP OTA is allowed (`CONFIG_ESP_HTTPS_OTA_ALLOW_HTTP`) for LAN use;
+  don't assume TLS.
+
 ### UART framing is `[0xA5][type:1][len:1][payload:N][crc8:1]`
 CRC8 poly 0x07, init 0x00. The length byte is technically redundant
 with the type → size table but catches host/firmware version skew and
@@ -118,13 +149,15 @@ update `last_cmd_us = now_us` — currently only the `cmd/vel` handler
 does. Don't add a side path that drives motors without resetting that
 timestamp.
 
-### Open-loop mode is the current default
-`CONFIG_UGV_OPEN_LOOP=y` because the user's current bot has no
-encoders (verified via firmware diagnostic — pins never toggle). In
-this mode PID is skipped entirely and `cmd_vel → wheel m/s → ×scale →
-PWM`. Firmware odometry feeds setpoints (not measurements) so the OLED
-still trends. When closed-loop is restored later, the IF-branch in
-`control_task` flips automatically — no other code changes needed.
+### Closed-loop mode is the current default
+`CONFIG_UGV_OPEN_LOOP` is unset (`n`) — the bot now has working wheel
+encoders, so PID runs against real measurements. The PID gains were
+seeded but not yet tuned against the real wheels, so expect to adjust
+them. Open-loop (`CONFIG_UGV_OPEN_LOOP=y`) is still available as a
+fallback: in that mode PID is skipped and `cmd_vel → wheel m/s → ×scale
+→ PWM`, with firmware odometry feeding setpoints (not measurements).
+The IF-branch in `control_task` selects between the two — no other code
+changes needed to switch.
 
 ### Hardware quirks already accounted for
 - **OLED is 128×32**, not 128×64 — wrong panel-size init makes output

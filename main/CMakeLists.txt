@@ -10,6 +10,7 @@ idf_component_register(
         "kinematics.c"
         "comms.c"
         "uart_link.c"
+        "ota.c"
         "i2c_bus.c"
         "ina219.c"
         "qmi8658.c"
@@ -27,6 +28,8 @@ idf_component_register(
         esp_netif
         nvs_flash
         mqtt
+        esp_https_ota
+        app_update
         freertos
         log
 )

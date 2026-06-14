@@ -20,6 +20,7 @@
 #include "kinematics.h"
 #include "motor.h"
 #include "odometry.h"
+#include "ota.h"
 #include "pid.h"
 #include "uart_link.h"
 #include "ugv_packets.h"
@@ -209,10 +210,6 @@ static void telemetry_task(void *arg) {
             uart_link_publish_battery(&bt);
 #endif
         }
-        // 1 Hz encoder GPIO/PCNT diagnostic.
-        if ((tick % CONFIG_UGV_TELEMETRY_HZ) == 0) {
-            encoder_debug_log();
-        }
         tick++;
     }
 }
@@ -286,6 +283,11 @@ static void imu_task(void *arg) {
 
 void app_main(void) {
     ESP_LOGI(TAG, "UGV firmware boot");
+
+    // OTA validate-on-boot: arms the rollback watchdog if this image just
+    // arrived via OTA (or is the first boot after a serial flash). Must run
+    // before comms_init so the watchdog is ticking before WiFi/MQTT come up.
+    ota_init();
 
     // Shared command queues — must exist before any transport tries to push.
     comms_queues_init();

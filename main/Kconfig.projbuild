@@ -22,12 +22,22 @@ menu "UGV firmware"
             bool "Enable UART link to host"
             default y
             help
-                Direct binary link to the upper computer on UART2 — same
-                packet structs as MQTT, framed with sync + type + length +
-                CRC8. When both transports are enabled, a recent UART RX
-                frame masks MQTT cmd_vel for UGV_UART_PREEMPT_MS to
-                prevent stale broker packets from stomping on live wire
-                commands.
+                Direct binary link to the upper computer — same packet
+                structs as MQTT, framed with sync + type + length + CRC8.
+                When both transports are enabled, a recent UART RX frame
+                masks MQTT cmd_vel for UGV_UART_PREEMPT_MS to prevent
+                stale broker packets from stomping on live wire commands.
+
+        config UGV_UART_PORT
+            int "UART port number (0=UART0/console header, 2=UART2)"
+            depends on UGV_ENABLE_UART_LINK
+            default 0
+            range 0 2
+            help
+                Which ESP32 UART peripheral the binary link uses. The
+                board's RX/TX header is wired to UART0 (U0TX=GPIO1,
+                U0RX=GPIO3). Using UART0 requires the console be disabled
+                (ESP_CONSOLE_NONE), since they cannot share the line.
 
         config UGV_UART_BAUD
             int "UART baud rate"
@@ -37,12 +47,18 @@ menu "UGV firmware"
         config UGV_UART_TX_PIN
             int "UART TX GPIO"
             depends on UGV_ENABLE_UART_LINK
-            default 19
+            default 1
+            help
+                Default 1 is U0TX on the board's RX/TX header. Do NOT use
+                GPIO 17 (motor AIN2) or 16 (right encoder B).
 
         config UGV_UART_RX_PIN
             int "UART RX GPIO"
             depends on UGV_ENABLE_UART_LINK
-            default 18
+            default 3
+            help
+                Default 3 is U0RX on the board's RX/TX header. Do NOT use
+                GPIO 17 (motor AIN2) or 16 (right encoder B).
 
         config UGV_UART_PREEMPT_MS
             int "UART preempt window over MQTT (ms)"
@@ -81,6 +97,22 @@ menu "UGV firmware"
             default ""
     endmenu
 
+    menu "OTA (over-the-air update)"
+        depends on UGV_ENABLE_MQTT
+        config UGV_OTA_VALIDATE_TIMEOUT_MS
+            int "Rollback watchdog: ms to reach MQTT before reverting"
+            default 120000
+            range 10000 600000
+            help
+                With rollback enabled, a freshly OTA'd image boots in
+                PENDING_VERIFY and must prove itself healthy by
+                reconnecting to the broker. If MQTT is not connected
+                within this window the image is marked invalid and the
+                bootloader rolls back to the previous slot on reboot.
+                This is the safety net for an unreachable rover — keep it
+                long enough to cover WiFi association + broker connect.
+    endmenu
+
     menu "Robot kinematics"
         config UGV_WHEEL_DIAMETER_MM
             int "Wheel diameter (mm)"
@@ -94,8 +126,16 @@ menu "UGV firmware"
 
         config UGV_ENCODER_PPR
             int "Encoder pulses per wheel revolution (after gearing, 2x decode)"
-            default 1650
+            default 2100
             range 1 100000
+            help
+                PCNT ticks per full wheel-output revolution. This must
+                already include the firmware's 2x edge decode.
+
+                Current bot: N20 magnetic hall encoder, 7 pulses/channel
+                per motor revolution, 1:150 gearbox. Datasheet quotes
+                7 x 150 = 1050 PPR (single-channel). With 2x decode the
+                firmware counts both edges: 1050 x 2 = 2100.
 
         config UGV_MOTOR_LEFT_INVERT
             bool "Invert LEFT motor direction"
