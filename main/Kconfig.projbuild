@@ -125,17 +125,19 @@ menu "UGV firmware"
             range 1 2000
 
         config UGV_ENCODER_PPR
-            int "Encoder pulses per wheel revolution (after gearing, 2x decode)"
-            default 2100
+            int "Encoder PCNT ticks per wheel revolution (after gearing)"
+            default 1055
             range 1 100000
             help
-                PCNT ticks per full wheel-output revolution. This must
-                already include the firmware's 2x edge decode.
+                PCNT ticks counted per full wheel-output revolution.
 
-                Current bot: N20 magnetic hall encoder, 7 pulses/channel
-                per motor revolution, 1:150 gearbox. Datasheet quotes
-                7 x 150 = 1050 PPR (single-channel). With 2x decode the
-                firmware counts both edges: 1050 x 2 = 2100.
+                Current bot: N20 magnetic hall encoder, 1:150 gearbox.
+                Datasheet quotes 7 PPR x 150 = 1050. The empirically
+                calibrated value is 1055, measured by comparing commanded
+                vs. actual travelled distance — this is what to trust.
+                Note: despite encoder.c configuring 2x edge counting, the
+                measured ticks/rev track the datasheet's ~1050 nominal, not
+                double it, so do NOT "correct" this to 2100.
 
         config UGV_MOTOR_LEFT_INVERT
             bool "Invert LEFT motor direction"

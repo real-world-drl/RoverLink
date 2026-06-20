@@ -69,7 +69,7 @@ All tunables live under `idf.py menuconfig` → **UGV firmware**.
 |---|---|---|
 | `UGV_WHEEL_DIAMETER_MM` | 80 | |
 | `UGV_TRACK_WIDTH_MM` | 172 | Wheel separation. |
-| `UGV_ENCODER_PPR` | 2100 | PCNT ticks per wheel revolution, including the firmware's 2x decode. Current bot: N20 hall encoder, 7 pulses/ch × 1:150 gearbox = 1050 single-channel, ×2 decode = 2100. Only used in closed-loop. |
+| `UGV_ENCODER_PPR` | 1055 | PCNT ticks per wheel revolution. Empirically calibrated (commanded vs. actual distance); matches the N20 datasheet's nominal 7 PPR × 1:150 ≈ 1050 — *not* the 2× the edge-decode config might suggest. Only used in closed-loop. |
 | `UGV_MOTOR_LEFT_INVERT` / `_RIGHT_INVERT` | n | Flip if a wheel spins the wrong way at `--linear 0.1`. |
 | `UGV_ENCODER_LEFT_INVERT` / `_RIGHT_INVERT` | n | Flip if tick count goes backwards when wheel rolls forward by hand. |
 | `UGV_MAX_LINEAR_MPS_X100` | 200 (= 2.0 m/s) | Clamp on incoming cmd_vel. |
