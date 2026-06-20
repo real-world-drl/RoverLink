@@ -85,10 +85,14 @@ static esp_err_t setup_unit(int edge_gpio, int level_gpio,
 }
 
 esp_err_t encoder_init(void) {
-    ESP_ERROR_CHECK(setup_unit(PIN_AENCA, PIN_AENCB, &s_unit_left));
-    ESP_ERROR_CHECK(setup_unit(PIN_BENCA, PIN_BENCB, &s_unit_right));
-    ESP_LOGI(TAG, "PCNT encoders ready (left A/B=%d/%d, right A/B=%d/%d)",
-             PIN_AENCA, PIN_AENCB, PIN_BENCA, PIN_BENCB);
+    // The driver headers serve the opposite physical sides: the B header is the
+    // physical LEFT wheel and the A header the physical RIGHT. Map the units to
+    // physical sides so left/right ticks (and thus odometry yaw) match reality
+    // and stay consistent with the motor channel mapping in motor.c.
+    ESP_ERROR_CHECK(setup_unit(PIN_BENCA, PIN_BENCB, &s_unit_left));
+    ESP_ERROR_CHECK(setup_unit(PIN_AENCA, PIN_AENCB, &s_unit_right));
+    ESP_LOGI(TAG, "PCNT encoders ready (left=B header %d/%d, right=A header %d/%d)",
+             PIN_BENCA, PIN_BENCB, PIN_AENCA, PIN_AENCB);
     return ESP_OK;
 }
 
