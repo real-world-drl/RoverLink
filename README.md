@@ -297,6 +297,19 @@ publishes the URL to `ugv/<id>/v1/cmd/ota`. The firmware downloads it via
 `esp_https_ota`, writes the spare slot, and reboots. HTTP (not HTTPS) is
 used on the LAN — keep the broker and this server off untrusted networks.
 
+> **Run the push from a host on the rover's LAN** (e.g. the Pi). The rover
+> fetches the image *back* from the serving machine's IP, so that machine
+> must be inbound-reachable from the rover. A few gotchas:
+> - **WSL2:** even in mirrored-networking mode (where WSL gets a real LAN
+>   IP), Windows Firewall blocks the inbound HTTP port by default, so the
+>   push times out with `bot never fetched` while the rover stays untouched.
+>   Either run `ota_push.py` from the Pi, or open inbound TCP `8070` on
+>   Windows (`New-NetFirewallRule ... -LocalPort 8070`, plus a
+>   `New-NetFirewallHyperVRule` in mirrored mode).
+> - If building elsewhere, `scp build/roverlink.bin tools/ota_push.py` to
+>   the Pi and run it there.
+> - A timeout never touches the running firmware — it's safe to retry.
+
 **Automatic rollback.** With `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`, a
 freshly OTA'd image boots in *pending* state and must prove itself by
 reconnecting to the broker within `UGV_OTA_VALIDATE_TIMEOUT_MS` (default
