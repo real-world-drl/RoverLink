@@ -91,8 +91,12 @@ esp_err_t motor_init(void) {
     };
     ESP_ERROR_CHECK(ledc_timer_config(&timer_cfg));
 
+    // The driver's A/B headers are wired to the opposite physical sides, so the
+    // left channel drives the B header (physical left wheel) and vice versa.
+    // Keep this in lockstep with the IN-pin choice in the setters below and the
+    // encoder mapping in encoder.c.
     const ledc_channel_config_t left_cfg = {
-        .gpio_num   = PIN_PWMA,
+        .gpio_num   = PIN_PWMB,
         .speed_mode = PWM_MODE,
         .channel    = PWM_CHAN_LEFT,
         .timer_sel  = PWM_TIMER,
@@ -101,7 +105,7 @@ esp_err_t motor_init(void) {
         .intr_type  = LEDC_INTR_DISABLE,
     };
     const ledc_channel_config_t right_cfg = {
-        .gpio_num   = PIN_PWMB,
+        .gpio_num   = PIN_PWMA,
         .speed_mode = PWM_MODE,
         .channel    = PWM_CHAN_RIGHT,
         .timer_sel  = PWM_TIMER,
@@ -118,12 +122,14 @@ esp_err_t motor_init(void) {
 }
 
 void motor_set_left_pwm(int16_t pwm) {
-    set_channel(PWM_CHAN_LEFT, PIN_AIN1, PIN_AIN2,
+    // Physical left wheel is on the B header (see motor_init).
+    set_channel(PWM_CHAN_LEFT, PIN_BIN1, PIN_BIN2,
                 MOTOR_LEFT_INVERT, clamp_pwm(pwm));
 }
 
 void motor_set_right_pwm(int16_t pwm) {
-    set_channel(PWM_CHAN_RIGHT, PIN_BIN1, PIN_BIN2,
+    // Physical right wheel is on the A header (see motor_init).
+    set_channel(PWM_CHAN_RIGHT, PIN_AIN1, PIN_AIN2,
                 MOTOR_RIGHT_INVERT, clamp_pwm(pwm));
 }
 
