@@ -213,9 +213,11 @@ menu "UGV firmware"
     menu "PID defaults"
         config UGV_PID_KP_X1000
             int "kp * 1000"
-            default 20000
+            default 200000
             help
-                Floating-point gains stored as integers here; converted at runtime.
+                Floating-point gains stored as integers here; converted at
+                runtime. 200000 = kp 200. Seeded from on-hardware tuning
+                (drivable, not finely tuned — expect to revisit).
 
         config UGV_PID_KI_X1000
             int "ki * 1000"
