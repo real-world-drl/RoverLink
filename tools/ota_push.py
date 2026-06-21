@@ -98,19 +98,33 @@ def main() -> int:
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     print(f"serving {binname} ({size} B) at {url}", flush=True)
 
-    topic = f"ugv/{args.id}/v1/cmd/ota"
+    cmd_topic = f"ugv/{args.id}/v1/cmd/ota"
+    status_topic = f"ugv/{args.id}/v1/tel/ota"
+
+    # Echo the firmware's OTA status (begin/progress/finish/validated/err...)
+    # as it publishes — this is how failures surface, since the device's
+    # serial console is disabled.
+    def on_message(_c, _u, m):
+        print(f"  [bot] {m.payload.decode(errors='replace')}", flush=True)
+
     client = mqtt.Client()
+    client.on_message = on_message
     print(f"connecting to broker {args.broker}:{args.port} ...", flush=True)
     client.connect(args.broker, args.port, keepalive=10)
     client.loop_start()
-    client.publish(topic, url, qos=1, retain=False)
-    print(f"published OTA trigger -> {topic}", flush=True)
+    # Clear any stale retained status from a previous run, then subscribe.
+    client.publish(status_topic, "", qos=1, retain=True)
+    client.subscribe(status_topic, qos=1)
+    client.publish(cmd_topic, url, qos=1, retain=False)
+    print(f"published OTA trigger -> {cmd_topic}", flush=True)
     print(f"  payload: {url}", flush=True)
+    print(f"streaming status from {status_topic} ...", flush=True)
 
     print(f"waiting up to {args.timeout:.0f}s for the bot to fetch ...", flush=True)
     if done.wait(timeout=args.timeout):
-        # Give the socket a beat to flush before we tear down.
-        time.sleep(0.5)
+        # Give status publishes (and the bot's "ok rebooting") a moment to
+        # arrive before we tear down the connection.
+        time.sleep(1.0)
         print("firmware delivered. The bot will reboot into the new image;",
               flush=True)
         print("watch for it to come back 'online' (rollback reverts it if not).",

@@ -311,6 +311,19 @@ used on the LAN — keep the broker and this server off untrusted networks.
 >   the Pi and run it there.
 > - A timeout never touches the running firmware — it's safe to retry.
 
+**Watching progress.** Since the serial console is disabled, the firmware
+reports OTA progress and results over MQTT on `ugv/<id>/v1/tel/ota` (a
+plain, retained UTF-8 string). `ota_push.py` subscribes and echoes these as
+`[bot] ...` lines: `start` → `dl 10% …` → `ok rebooting` → (after reboot)
+`validated <slot>`. A failure shows the stage and the exact error, e.g.
+`finish err=ESP_ERR_OTA_VALIDATE_FAILED` or `perform err=ESP_ERR_HTTP_CONNECT`
+— that's how you diagnose a download that "succeeded" on the host but didn't
+take. You can also watch it directly:
+
+```bash
+mosquitto_sub -h <broker> -t 'ugv/<id>/v1/tel/ota' -v
+```
+
 **Automatic rollback.** With `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`, a
 freshly OTA'd image boots in *pending* state and must prove itself by
 reconnecting to the broker within `UGV_OTA_VALIDATE_TIMEOUT_MS` (default

@@ -28,6 +28,10 @@
 // struct), since OTA is a one-shot action, not part of the binary wire
 // telemetry. MQTT transport only — OTA needs WiFi regardless.
 #define UGV_TOPIC_CMD_OTA    "cmd/ota"
+// OTA progress/result, published as a plain UTF-8 string (human-readable,
+// retained so the last outcome is visible to a late subscriber). The
+// console is disabled in this build, so this is how OTA failures surface.
+#define UGV_TOPIC_TEL_OTA    "tel/ota"
 
 #define UGV_STATUS_ONLINE    "online"
 #define UGV_STATUS_OFFLINE   "offline"

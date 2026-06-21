@@ -88,6 +88,7 @@ static char s_topic_tel_imu[TOPIC_BUF_LEN];
 static char s_topic_tel_batt[TOPIC_BUF_LEN];
 static char s_topic_status[TOPIC_BUF_LEN];
 static char s_topic_cmd_ota[TOPIC_BUF_LEN];
+static char s_topic_tel_ota[TOPIC_BUF_LEN];
 
 static EventGroupHandle_t s_wifi_events;
 #define WIFI_CONNECTED_BIT BIT0
@@ -229,6 +230,7 @@ static void build_topics(void) {
     BUILD(s_topic_tel_batt,    UGV_TOPIC_TEL_BATT);
     BUILD(s_topic_status,      UGV_TOPIC_STATUS);
     BUILD(s_topic_cmd_ota,     UGV_TOPIC_CMD_OTA);
+    BUILD(s_topic_tel_ota,     UGV_TOPIC_TEL_OTA);
 #undef BUILD
     ESP_LOGI(TAG, "topics:");
     ESP_LOGI(TAG, "  sub: %s", s_topic_cmd_vel);
@@ -238,6 +240,7 @@ static void build_topics(void) {
     ESP_LOGI(TAG, "  pub: %s", s_topic_tel_wheel);
     ESP_LOGI(TAG, "  pub: %s", s_topic_tel_imu);
     ESP_LOGI(TAG, "  pub: %s", s_topic_tel_batt);
+    ESP_LOGI(TAG, "  pub: %s", s_topic_tel_ota);
     ESP_LOGI(TAG, "  lwt: %s", s_topic_status);
 }
 
@@ -302,6 +305,13 @@ void comms_publish_imu(const ugv_imu_telem_t *t) {
                             (const char *)t, sizeof(*t), 0, 0);
 }
 
+void comms_publish_ota_status(const char *msg) {
+    if (!s_mqtt_connected || msg == NULL) return;
+    // QoS 1 + retained: OTA status is low-rate and the last line should
+    // survive for a subscriber that connects after the fact.
+    esp_mqtt_client_publish(s_mqtt, s_topic_tel_ota, msg, 0, 1, 1);
+}
+
 bool comms_mqtt_connected(void) { return s_mqtt_connected; }
 
 #else  // CONFIG_UGV_ENABLE_MQTT not defined ----------------------------
@@ -310,6 +320,7 @@ esp_err_t comms_init(void) { return ESP_OK; }
 void comms_publish_wheel  (const ugv_wheel_telem_t   *t) { (void)t; }
 void comms_publish_battery(const ugv_battery_telem_t *t) { (void)t; }
 void comms_publish_imu    (const ugv_imu_telem_t     *t) { (void)t; }
+void comms_publish_ota_status(const char *msg) { (void)msg; }
 bool comms_mqtt_connected (void) { return false; }
 
 #endif

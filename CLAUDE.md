@@ -134,6 +134,13 @@ Key invariants if you touch this:
   (or the initial OTA bring-up) needs one serial flash in download mode.
 - HTTP OTA is allowed (`CONFIG_ESP_HTTPS_OTA_ALLOW_HTTP`) for LAN use;
   don't assume TLS.
+- **Progress/results go to `tel/ota`** (plain retained string), because the
+  console is off — that's the only way OTA failures are visible. `ota.c`
+  uses the *staged* `esp_https_ota_begin/perform/finish` API (not the
+  one-shot `esp_https_ota`) so it can report which stage failed with the
+  `esp_err` name. Keep that reporting if you refactor — a silent OTA on a
+  console-less board is undebuggable (this bit us once: a download that
+  finished on the host failed at validate with no visible cause).
 
 ### UART framing is `[0xA5][type:1][len:1][payload:N][crc8:1]`
 CRC8 poly 0x07, init 0x00. The length byte is technically redundant

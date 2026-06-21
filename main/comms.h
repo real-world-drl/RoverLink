@@ -43,6 +43,12 @@ void comms_publish_wheel(const ugv_wheel_telem_t *t);
 void comms_publish_battery(const ugv_battery_telem_t *t);
 void comms_publish_imu(const ugv_imu_telem_t *t);
 
+// Publishes a human-readable OTA status line to tel/ota (QoS 1, retained so
+// the last outcome sticks for a late subscriber). The console is off in this
+// build, so this is the channel OTA progress/failures surface on. No-op if
+// MQTT isn't connected or isn't compiled in.
+void comms_publish_ota_status(const char *msg);
+
 // True once the MQTT client has reported MQTT_EVENT_CONNECTED at least once
 // in the current session.
 bool comms_mqtt_connected(void);

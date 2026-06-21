@@ -5,6 +5,8 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
+#include <stdarg.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -16,7 +18,22 @@
 #include "esp_http_client.h"
 #include "sdkconfig.h"
 
+#include "comms.h"
+
 static const char *TAG = "ota";
+
+// Mirror an OTA status line to both the local log (dropped when the console
+// is off, but useful when it isn't) and tel/ota over MQTT — the latter is
+// the only channel that survives the disabled console.
+static void ota_report(const char *fmt, ...) {
+    char buf[96];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    ESP_LOGW(TAG, "%s", buf);
+    comms_publish_ota_status(buf);
+}
 
 // URLs longer than this are rejected. A LAN http://host:port/roverlink.bin
 // is well under 256 B.
@@ -81,8 +98,9 @@ void ota_mark_healthy(void) {
     if (esp_ota_get_state_partition(running, &st) == ESP_OK &&
         st == ESP_OTA_IMG_PENDING_VERIFY) {
         if (esp_ota_mark_app_valid_cancel_rollback() == ESP_OK) {
-            ESP_LOGI(TAG, "image '%s' marked valid (rollback cancelled)",
-                     running->label);
+            // Closes the loop for the host: the new image came back online
+            // and confirmed itself, so the rollback watchdog stood down.
+            ota_report("validated %s", running->label);
         }
     }
 }
@@ -91,7 +109,7 @@ void ota_mark_healthy(void) {
 
 static void ota_task(void *arg) {
     char *url = (char *)arg;
-    ESP_LOGW(TAG, "starting OTA from %s", url);
+    ota_report("start");
 
     esp_http_client_config_t http = {
         .url               = url,
@@ -102,14 +120,55 @@ static void ota_task(void *arg) {
         .http_config = &http,
     };
 
-    esp_err_t err = esp_https_ota(&cfg);
-    if (err == ESP_OK) {
-        ESP_LOGW(TAG, "OTA OK — rebooting into new image");
-        free(url);
-        esp_restart();   // does not return
+    // Staged API (vs. the one-shot esp_https_ota): lets us report which step
+    // failed and stream progress, instead of a silent all-or-nothing call.
+    esp_https_ota_handle_t handle = NULL;
+    esp_err_t err = esp_https_ota_begin(&cfg, &handle);
+    if (err != ESP_OK || handle == NULL) {
+        ota_report("begin err=%s", esp_err_to_name(err));
+        goto done;   // nothing to abort: begin failed
     }
-    ESP_LOGE(TAG, "OTA failed: %s — staying on current image",
-             esp_err_to_name(err));
+
+    const int total = esp_https_ota_get_image_size(handle);  // -1 if unknown
+    int last_pct = -100;
+    do {
+        err = esp_https_ota_perform(handle);
+        const int read = esp_https_ota_get_image_len_read(handle);
+        if (total > 0) {
+            const int pct = (int)((int64_t)read * 100 / total);
+            if (pct >= last_pct + 10) {   // throttle to ~10 messages
+                ota_report("dl %d%% (%d/%d)", pct, read, total);
+                last_pct = pct;
+            }
+        }
+    } while (err == ESP_ERR_HTTPS_OTA_IN_PROGRESS);
+
+    if (err != ESP_OK) {
+        ota_report("perform err=%s", esp_err_to_name(err));
+        esp_https_ota_abort(handle);
+        goto done;
+    }
+    if (!esp_https_ota_is_complete_data_received(handle)) {
+        ota_report("incomplete download");
+        esp_https_ota_abort(handle);
+        goto done;
+    }
+
+    // finish validates the image header/signature; don't abort after it.
+    err = esp_https_ota_finish(handle);
+    if (err != ESP_OK) {
+        ota_report("finish err=%s", esp_err_to_name(err));
+        goto done;
+    }
+
+    ota_report("ok rebooting");
+    free(url);
+    // Give the QoS-1 publish a moment to flush before the reboot tears down
+    // the MQTT connection, so the host actually sees the "ok" line.
+    vTaskDelay(pdMS_TO_TICKS(300));
+    esp_restart();   // does not return
+
+done:
     free(url);
     s_in_progress = false;
     vTaskDelete(NULL);
