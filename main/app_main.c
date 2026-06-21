@@ -59,6 +59,13 @@ static void control_task(void *arg) {
     float set_lin = 0.0f, set_ang = 0.0f;
     float v_set_l = 0.0f, v_set_r = 0.0f;
 
+    // EMA-filtered wheel velocity. The raw per-cycle estimate (tick delta /
+    // dt) is badly quantized at low speed — few ticks per 10 ms window — which
+    // both starves the PID and defeats the min_drive stall-gate. Smoothing it
+    // is what makes low-speed turning track.
+    float v_filt_l = 0.0f, v_filt_r = 0.0f;
+    const float vel_alpha = CONFIG_UGV_VEL_FILTER_ALPHA_X100 / 100.0f;
+
     const float max_lin = CONFIG_UGV_MAX_LINEAR_MPS_X100 / 100.0f;
     const float max_ang = CONFIG_UGV_MAX_ANGULAR_RPS_X100 / 100.0f;
 
@@ -78,10 +85,16 @@ static void control_task(void *arg) {
             pid_set_tunings(&s_pid_r, new_pid.kp, new_pid.ki, new_pid.kd);
             pid_set_output_limits(&s_pid_l, -new_pid.output_clamp, new_pid.output_clamp);
             pid_set_output_limits(&s_pid_r, -new_pid.output_clamp, new_pid.output_clamp);
-            // new_pid.deadband is a reserved v1 wire field, no longer applied
-            // (closed-loop uses the build-time CONFIG_UGV_MIN_DRIVE_PWM floor).
-            ESP_LOGI(TAG, "PID updated: kp=%.3f ki=%.3f kd=%.3f clamp=%.0f",
-                     new_pid.kp, new_pid.ki, new_pid.kd, new_pid.output_clamp);
+            // min_drive: <0 means "leave at the build-time default"; >=0
+            // overrides it live (lets the host tune the stiction floor —
+            // the dominant lever for turn-in-place — without an OTA).
+            if (new_pid.min_drive >= 0.0f) {
+                pid_set_min_drive(&s_pid_l, new_pid.min_drive);
+                pid_set_min_drive(&s_pid_r, new_pid.min_drive);
+            }
+            ESP_LOGI(TAG, "PID updated: kp=%.3f ki=%.3f kd=%.3f clamp=%.0f min_drive=%.0f",
+                     new_pid.kp, new_pid.ki, new_pid.kd, new_pid.output_clamp,
+                     new_pid.min_drive);
         }
 
         ugv_cmd_vel_t new_vel;
@@ -100,16 +113,23 @@ static void control_task(void *arg) {
         const int32_t left_ticks  = encoder_left_ticks();
         const int32_t right_ticks = encoder_right_ticks();
         const float dt = (float)(now_us - last_us) * 1e-6f;
-        float v_meas_l = 0.0f, v_meas_r = 0.0f;
+        float v_raw_l = 0.0f, v_raw_r = 0.0f;
         if (dt > 0.0f) {
-            v_meas_l = kinematics_ticks_to_meters(&s_kin,
+            v_raw_l = kinematics_ticks_to_meters(&s_kin,
                           left_ticks  - last_left_ticks ) / dt;
-            v_meas_r = kinematics_ticks_to_meters(&s_kin,
+            v_raw_r = kinematics_ticks_to_meters(&s_kin,
                           right_ticks - last_right_ticks) / dt;
         }
         last_left_ticks  = left_ticks;
         last_right_ticks = right_ticks;
         last_us          = now_us;
+
+        // Low-pass the raw estimate before it feeds the PID / odometry /
+        // telemetry. vel_alpha=1.0 disables it.
+        v_filt_l += vel_alpha * (v_raw_l - v_filt_l);
+        v_filt_r += vel_alpha * (v_raw_r - v_filt_r);
+        const float v_meas_l = v_filt_l;
+        const float v_meas_r = v_filt_r;
 
         float out_l, out_r;
 #if CONFIG_UGV_OPEN_LOOP
@@ -330,7 +350,8 @@ void app_main(void) {
     kinematics_init(&s_kin,
                     CONFIG_UGV_WHEEL_DIAMETER_MM / 1000.0f,
                     CONFIG_UGV_TRACK_WIDTH_MM   / 1000.0f,
-                    CONFIG_UGV_ENCODER_PPR);
+                    CONFIG_UGV_ENCODER_PPR,
+                    CONFIG_UGV_MAX_WHEEL_MPS_X100 / 100.0f);
 
     const float kp = CONFIG_UGV_PID_KP_X1000 / 1000.0f;
     const float ki = CONFIG_UGV_PID_KI_X1000 / 1000.0f;

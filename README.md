@@ -74,13 +74,14 @@ All tunables live under `idf.py menuconfig` → **UGV firmware**.
 | `UGV_ENCODER_LEFT_INVERT` / `_RIGHT_INVERT` | n | Flip if tick count goes backwards when wheel rolls forward by hand. |
 | `UGV_MAX_LINEAR_MPS_X100` | 200 (= 2.0 m/s) | Clamp on incoming cmd_vel. |
 | `UGV_MAX_ANGULAR_RPS_X100` | 600 (= 6.0 rad/s) | Clamp on incoming cmd_vel. |
+| `UGV_MAX_WHEEL_MPS_X100` | 135 (= 1.35 m/s) | Measured wheel-speed ceiling at full PWM (this bot does ~1.43; 1.35 leaves headroom). Drives **angular-priority saturation**: a cmd_vel that would push a wheel past this trades down *forward* speed to keep the *turn rate*, so the bot still turns at top speed instead of plowing straight. Only acts above this speed — below it, turning depends on the PID tracking (gains). Calibrate per bot (drive flat-out straight, read `tel/wheel`). 0 disables. |
 
 ### PID (closed-loop only)
 | Option | Default | Notes |
 |---|---|---|
 | `UGV_PID_KP_X1000` / `_KI_X1000` / `_KD_X1000` | 20000 / 2000000 / 0 | Seeded from stock Beast firmware. Almost certainly needs tuning. |
 | `UGV_PID_OUTPUT_CLAMP` | 255 | Also used as the open-loop PWM clamp. |
-| `UGV_MIN_DRIVE_PWM` | 30 | Closed-loop sub-stiction floor: a nonzero wheel command whose PID output is below this gets floored to it (keeping sign) so the wheel actually turns — fixes sluggish turn-in-place. A commanded stop still yields zero. 0 disables. |
+| `UGV_MIN_DRIVE_PWM` | 30 | Closed-loop stiction break: floors the output to this (keeping sign) **only while a wheel is stalled** (lagging far below its setpoint), to get a stopped wheel moving. Disengages once the wheel is rolling, so it doesn't flatten the wheel differential during a moving turn. Live-tunable via `pid_tune.py --min-drive`. 0 disables. |
 | `UGV_PID_DEADBAND` | 23 | **Open-loop only.** Output magnitudes below this are zeroed (no feedback to floor against). Closed-loop uses `UGV_MIN_DRIVE_PWM` instead. |
 
 The PID gains can also be pushed live over MQTT — see the `cmd/pid` topic
@@ -255,6 +256,27 @@ the OTA trigger over MQTT (see [Firmware updates](#firmware-updates-ota)).
 ```bash
 ./tools/ota_push.py --broker 192.168.1.100 --id ugv01 --bin build/roverlink.bin
 ```
+
+`tools/pid_tune.py` — sets PID gains **and** the `min_drive` stiction floor
+live over `cmd/pid` (no reflash), and optionally watches per-wheel
+setpoint-vs-measured tracking. Find good values here, then bake them into
+`UGV_PID_K*_X1000` / `UGV_MIN_DRIVE_PWM`. `--min-drive -1` (default) leaves
+the firmware's build-time floor untouched.
+
+```bash
+./tools/pid_tune.py --broker 192.168.1.100 --id ugv01 --kp 120 --ki 300 --min-drive 45 --watch
+# then command motion from another terminal:
+./tools/cmd_vel_test.py --broker 192.168.1.100 --angular 1.0 --hz 20
+```
+
+For turn-in-place the wheel setpoint is tiny, so the PID output is tiny —
+whether the wheel breaks free is mostly down to `min_drive`. Tune that
+first (raise until a turn reliably starts from rest), then `kp`/`ki` for
+tracking. `min_drive` only engages while a wheel is *stalled*, so it
+breaks free at low speed without flattening the differential during a
+moving turn — but if you can't break stiction without a high `min_drive`,
+that's a sign `kp`/`ki` are too weak; prefer fixing the gains over cranking
+the floor.
 
 `tools/ugv_packets.py` — shared constants, struct formats, framing, and
 CRC8 used by both UART tools. Edit this if you ever change the wire

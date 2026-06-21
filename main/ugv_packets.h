@@ -65,8 +65,10 @@ typedef struct __attribute__((packed)) {
     float ki;
     float kd;
     float output_clamp;           // ± PWM counts
-    float deadband;               // reserved (v1): no longer applied —
-                                  // closed-loop uses CONFIG_UGV_MIN_DRIVE_PWM
+    float min_drive;              // closed-loop sub-stiction floor (PWM).
+                                  // <0 = leave unchanged (keep build-time
+                                  // CONFIG_UGV_MIN_DRIVE_PWM); >=0 sets it,
+                                  // 0 disables. (Was the v1 `deadband` slot.)
 } ugv_cmd_pid_t;                  // 20 B
 
 // Host-published pose for the OLED display. The firmware also computes its

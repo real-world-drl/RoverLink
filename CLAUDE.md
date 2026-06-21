@@ -167,16 +167,36 @@ The IF-branch in `control_task` selects between the two — no other code
 changes needed to switch.
 
 ### Two different sub-stall treatments: min-drive (closed) vs deadband (open)
-`pid_compute` does NOT zero small outputs. It applies a **minimum-drive
-floor** (`CONFIG_UGV_MIN_DRIVE_PWM`): a nonzero wheel setpoint whose PID
-output is below the floor gets bumped up to it (keeping sign), so
-turn-in-place (tiny setpoints) actually moves instead of dying in the
-motor stiction zone. A commanded stop (`setpoint ~0`) still returns hard
+`pid_compute` does NOT zero small outputs. It applies a **stiction-break
+floor** (`CONFIG_UGV_MIN_DRIVE_PWM`), but only while the wheel is *stalled*
+(`|measurement| < STALL_FRAC*|setpoint|`): a stuck wheel's weak PID output
+gets bumped up to the floor (keeping sign) to break free, so turn-in-place
+(tiny setpoints) actually moves. **Don't drop the stall gate** — flooring a
+*moving* wheel clamps both wheels of a gentle arc to the same value and
+erases the differential, so the bot drives straight instead of turning
+(this was a real bug). A commanded stop (`setpoint ~0`) still returns hard
 zero. The old "zero below deadband" was what made steering sluggish.
 The **open-loop** path keeps a separate `CONFIG_UGV_PID_DEADBAND` zeroing
 (no measurement to floor against). Don't re-merge these — they're
-deliberately different. The `deadband` field in `ugv_cmd_pid_t` is now a
-reserved v1 wire slot (no longer applied); `min_drive` is build-time only.
+deliberately different. `CONFIG_UGV_MIN_DRIVE_PWM` is the build-time
+default; the old `deadband` slot in `ugv_cmd_pid_t` was repurposed to carry
+`min_drive` live over `cmd/pid` (`<0` = keep build-time default, `>=0`
+overrides — `tools/pid_tune.py --min-drive`). Same 20-byte v1 layout, just
+a renamed/reused reserved field; the integrator also resets on a commanded
+stop (`setpoint ~0`) and uses conditional anti-windup — don't reintroduce
+unconditional integration or the turn-start lurch comes back.
+
+### Angular-priority saturation keeps turns alive at speed
+`kinematics_cmd_vel_to_wheels` splits cmd_vel into common (linear) and
+differential (turn) parts and, if a wheel would exceed
+`CONFIG_UGV_MAX_WHEEL_MPS_X100`, shrinks the **common** part first so the
+turn rate survives. Without it, commanding linear at/above the wheel
+ceiling pins both wheels at max PWM and the bot plows straight — turning
+only works below the ceiling. The ceiling is a **measured, per-bot,
+per-battery** number (drive flat-out straight, read `tel/wheel` meas), not
+the motor's datasheet spec — the achievable top speed sags with load and
+battery. Set it to the *currently achievable* max (slightly under), or the
+saturation logic mis-fires. 0 disables (raw inverse kinematics).
 
 ### Hardware quirks already accounted for
 - **OLED is 128×32**, not 128×64 — wrong panel-size init makes output

@@ -166,6 +166,22 @@ menu "UGV firmware"
             default 600
             help
                 Clamp on incoming cmd_vel. 600 = 6.0 rad/s.
+
+        config UGV_MAX_WHEEL_MPS_X100
+            int "Max achievable wheel speed (m/s * 100)"
+            default 135
+            range 0 1000
+            help
+                The wheel ground speed at full PWM, MEASURED (drive flat-out
+                straight, e.g. cmd linear 2.0, and read the plateau of
+                tel/wheel meas). This bot measured ~1.43 m/s; 135 leaves a
+                little PID headroom under that. Used for angular-priority
+                saturation: when a cmd_vel would drive a wheel past this, the
+                forward (linear) component is reduced so the turn rate is
+                preserved — otherwise commanding linear at/above this pins
+                both wheels at max and the bot can't turn while moving. Note
+                this only matters ABOVE this speed; below it, turning depends
+                on the PID actually tracking (gains). 0 disables saturation.
     endmenu
 
     menu "Control mode"
@@ -209,6 +225,21 @@ menu "UGV firmware"
             int "kd * 1000"
             default 0
 
+        config UGV_VEL_FILTER_ALPHA_X100
+            int "Wheel-velocity EMA filter alpha (x100)"
+            default 30
+            range 1 100
+            help
+                Exponential moving-average smoothing on the measured wheel
+                velocity before it feeds the PID, odometry, and telemetry:
+                v_filt += (alpha) * (v_raw - v_filt). The raw per-cycle
+                estimate is badly quantized at low speed (few encoder ticks
+                per control period), which starves the loop and defeats the
+                min_drive stall-gate, making turn-in-place crawl. Lower =
+                smoother but more lag (30 ≈ average over ~3 cycles, ~30 ms).
+                100 disables filtering. Too low can destabilize a high-ki
+                loop — back off if you see oscillation.
+
         config UGV_PID_OUTPUT_CLAMP
             int "PID output clamp (PWM counts)"
             default 255
@@ -218,14 +249,18 @@ menu "UGV firmware"
             default 30
             range 0 255
             help
-                When the PID is commanding motion (nonzero wheel setpoint)
-                but its output lands below this many PWM counts, the output
-                is floored to this value (keeping sign) so the wheel
-                actually turns instead of sitting in the motor's stiction
-                dead zone. Set just above the lowest PWM that reliably
-                starts the wheel; 0 disables the floor. A commanded stop
-                (setpoint 0) still produces zero. Replaces the old
-                "zero below deadband" behaviour for closed-loop control.
+                Stiction break for a stalled wheel. When a wheel is
+                commanded to move but is still lagging far below its
+                setpoint (i.e. stuck) and the PID output is below this many
+                PWM counts, the output is floored to this value (keeping
+                sign) so the wheel breaks free. Once the wheel is rolling
+                the floor disengages, so it does NOT clamp a moving wheel —
+                that matters for arc turns, where flooring both wheels to
+                the same value would erase the differential and the bot
+                would drive straight. Set just above the lowest PWM that
+                reliably starts a stopped wheel; 0 disables. A commanded
+                stop (setpoint 0) still produces zero. Tunable live via
+                cmd/pid (tools/pid_tune.py --min-drive).
 
         config UGV_PID_DEADBAND
             int "Open-loop PWM deadband (output |x|<deadband => 0)"
