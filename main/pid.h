@@ -11,7 +11,7 @@
 typedef struct {
     float kp, ki, kd;
     float out_min, out_max;
-    float deadband;
+    float min_drive;   // sub-stiction floor: see pid_compute
 
     float i_term;
     float last_meas;
@@ -22,11 +22,11 @@ typedef struct {
 void  pid_init(ugv_pid_t *p,
                float kp, float ki, float kd,
                float out_min, float out_max,
-               float deadband);
+               float min_drive);
 
 void  pid_set_tunings(ugv_pid_t *p, float kp, float ki, float kd);
 void  pid_set_output_limits(ugv_pid_t *p, float out_min, float out_max);
-void  pid_set_deadband(ugv_pid_t *p, float deadband);
+void  pid_set_min_drive(ugv_pid_t *p, float min_drive);
 
 void  pid_reset(ugv_pid_t *p);
 

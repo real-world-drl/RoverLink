@@ -213,9 +213,27 @@ menu "UGV firmware"
             int "PID output clamp (PWM counts)"
             default 255
 
+        config UGV_MIN_DRIVE_PWM
+            int "Closed-loop minimum drive PWM (sub-stiction floor)"
+            default 30
+            range 0 255
+            help
+                When the PID is commanding motion (nonzero wheel setpoint)
+                but its output lands below this many PWM counts, the output
+                is floored to this value (keeping sign) so the wheel
+                actually turns instead of sitting in the motor's stiction
+                dead zone. Set just above the lowest PWM that reliably
+                starts the wheel; 0 disables the floor. A commanded stop
+                (setpoint 0) still produces zero. Replaces the old
+                "zero below deadband" behaviour for closed-loop control.
+
         config UGV_PID_DEADBAND
-            int "PWM deadband (output |x|<deadband => 0)"
+            int "Open-loop PWM deadband (output |x|<deadband => 0)"
             default 23
+            help
+                Open-loop only: with no encoder feedback there is nothing
+                to floor against, so sub-stall PWM is zeroed to avoid motor
+                hum. Closed-loop uses UGV_MIN_DRIVE_PWM instead.
     endmenu
 
     menu "Timing"

@@ -32,6 +32,8 @@ PKT_STATUS      = 0x20
 # ugv_cmd_vel_t: uint64 host_ts_us, float linear_x, float angular_z
 FMT_CMD_VEL     = "<Qff"
 # ugv_cmd_pid_t: float kp, ki, kd, output_clamp, deadband
+# (deadband is reserved in v1 — firmware no longer applies it; closed-loop
+#  uses the build-time CONFIG_UGV_MIN_DRIVE_PWM floor instead)
 FMT_CMD_PID     = "<fffff"
 # ugv_cmd_display_t: uint64 host_ts_us, float x, y, yaw, pitch, roll
 FMT_CMD_DISPLAY = "<Qfffff"

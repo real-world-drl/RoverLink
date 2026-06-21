@@ -159,6 +159,18 @@ fallback: in that mode PID is skipped and `cmd_vel → wheel m/s → ×scale
 The IF-branch in `control_task` selects between the two — no other code
 changes needed to switch.
 
+### Two different sub-stall treatments: min-drive (closed) vs deadband (open)
+`pid_compute` does NOT zero small outputs. It applies a **minimum-drive
+floor** (`CONFIG_UGV_MIN_DRIVE_PWM`): a nonzero wheel setpoint whose PID
+output is below the floor gets bumped up to it (keeping sign), so
+turn-in-place (tiny setpoints) actually moves instead of dying in the
+motor stiction zone. A commanded stop (`setpoint ~0`) still returns hard
+zero. The old "zero below deadband" was what made steering sluggish.
+The **open-loop** path keeps a separate `CONFIG_UGV_PID_DEADBAND` zeroing
+(no measurement to floor against). Don't re-merge these — they're
+deliberately different. The `deadband` field in `ugv_cmd_pid_t` is now a
+reserved v1 wire slot (no longer applied); `min_drive` is build-time only.
+
 ### Hardware quirks already accounted for
 - **OLED is 128×32**, not 128×64 — wrong panel-size init makes output
   garbled-but-recognizable.

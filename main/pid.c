@@ -12,10 +12,10 @@ static inline float clampf(float v, float lo, float hi) {
 }
 
 void pid_init(ugv_pid_t *p, float kp, float ki, float kd,
-              float out_min, float out_max, float deadband) {
+              float out_min, float out_max, float min_drive) {
     p->kp = kp;  p->ki = ki;  p->kd = kd;
     p->out_min = out_min;  p->out_max = out_max;
-    p->deadband = deadband;
+    p->min_drive = min_drive;
     pid_reset(p);
 }
 
@@ -28,8 +28,8 @@ void pid_set_output_limits(ugv_pid_t *p, float out_min, float out_max) {
     p->i_term = clampf(p->i_term, out_min, out_max);
 }
 
-void pid_set_deadband(ugv_pid_t *p, float deadband) {
-    p->deadband = deadband;
+void pid_set_min_drive(ugv_pid_t *p, float min_drive) {
+    p->min_drive = min_drive;
 }
 
 void pid_reset(ugv_pid_t *p) {
@@ -67,6 +67,16 @@ float pid_compute(ugv_pid_t *p, float setpoint, float measurement, int64_t now_u
     float out = p->kp * error + p->i_term - p->kd * dmeas;
     out = clampf(out, p->out_min, p->out_max);
 
-    if (fabsf(out) < p->deadband) out = 0.0f;
+    // Minimum-drive feedforward. A real motion command whose PID output
+    // lands below the motor's stiction floor would otherwise produce a PWM
+    // too small to turn the wheel — that's what made turn-in-place (tiny
+    // wheel setpoints) feel sluggish. Floor the magnitude to min_drive,
+    // keeping the controller's sign. A commanded stop (setpoint ~0) still
+    // returns a hard zero so the bot can rest and the wheels don't creep.
+    if (fabsf(setpoint) < 1e-6f) {
+        out = 0.0f;
+    } else if (p->min_drive > 0.0f && fabsf(out) < p->min_drive) {
+        out = copysignf(p->min_drive, out != 0.0f ? out : setpoint);
+    }
     return out;
 }

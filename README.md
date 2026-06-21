@@ -80,7 +80,8 @@ All tunables live under `idf.py menuconfig` → **UGV firmware**.
 |---|---|---|
 | `UGV_PID_KP_X1000` / `_KI_X1000` / `_KD_X1000` | 20000 / 2000000 / 0 | Seeded from stock Beast firmware. Almost certainly needs tuning. |
 | `UGV_PID_OUTPUT_CLAMP` | 255 | Also used as the open-loop PWM clamp. |
-| `UGV_PID_DEADBAND` | 23 | Output magnitudes below this are zeroed — avoids motor stall hum. Applied in both modes. |
+| `UGV_MIN_DRIVE_PWM` | 30 | Closed-loop sub-stiction floor: a nonzero wheel command whose PID output is below this gets floored to it (keeping sign) so the wheel actually turns — fixes sluggish turn-in-place. A commanded stop still yields zero. 0 disables. |
+| `UGV_PID_DEADBAND` | 23 | **Open-loop only.** Output magnitudes below this are zeroed (no feedback to floor against). Closed-loop uses `UGV_MIN_DRIVE_PWM` instead. |
 
 The PID gains can also be pushed live over MQTT — see the `cmd/pid` topic
 below — and the change persists across boots because the topic is retained.

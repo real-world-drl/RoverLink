@@ -78,11 +78,10 @@ static void control_task(void *arg) {
             pid_set_tunings(&s_pid_r, new_pid.kp, new_pid.ki, new_pid.kd);
             pid_set_output_limits(&s_pid_l, -new_pid.output_clamp, new_pid.output_clamp);
             pid_set_output_limits(&s_pid_r, -new_pid.output_clamp, new_pid.output_clamp);
-            pid_set_deadband(&s_pid_l, new_pid.deadband);
-            pid_set_deadband(&s_pid_r, new_pid.deadband);
-            ESP_LOGI(TAG, "PID updated: kp=%.3f ki=%.3f kd=%.3f clamp=%.0f db=%.0f",
-                     new_pid.kp, new_pid.ki, new_pid.kd,
-                     new_pid.output_clamp, new_pid.deadband);
+            // new_pid.deadband is a reserved v1 wire field, no longer applied
+            // (closed-loop uses the build-time CONFIG_UGV_MIN_DRIVE_PWM floor).
+            ESP_LOGI(TAG, "PID updated: kp=%.3f ki=%.3f kd=%.3f clamp=%.0f",
+                     new_pid.kp, new_pid.ki, new_pid.kd, new_pid.output_clamp);
         }
 
         ugv_cmd_vel_t new_vel;
@@ -114,8 +113,9 @@ static void control_task(void *arg) {
 
         float out_l, out_r;
 #if CONFIG_UGV_OPEN_LOOP
-        // No encoder feedback — map setpoint directly to PWM, clamp,
-        // apply the same deadband the PID uses to avoid sub-stall hum.
+        // No encoder feedback — map setpoint directly to PWM, clamp, and
+        // zero sub-stall PWM (open-loop has no measurement to floor against,
+        // so it keeps a deadband rather than the closed-loop min-drive).
         const float scale = CONFIG_UGV_OPEN_LOOP_PWM_PER_MPS_X10 / 10.0f;
         const float clamp = (float)CONFIG_UGV_PID_OUTPUT_CLAMP;
         const float deadb = (float)CONFIG_UGV_PID_DEADBAND;
@@ -337,16 +337,16 @@ void app_main(void) {
     const float kd = CONFIG_UGV_PID_KD_X1000 / 1000.0f;
     pid_init(&s_pid_l, kp, ki, kd,
              -CONFIG_UGV_PID_OUTPUT_CLAMP, CONFIG_UGV_PID_OUTPUT_CLAMP,
-             CONFIG_UGV_PID_DEADBAND);
+             CONFIG_UGV_MIN_DRIVE_PWM);
     pid_init(&s_pid_r, kp, ki, kd,
              -CONFIG_UGV_PID_OUTPUT_CLAMP, CONFIG_UGV_PID_OUTPUT_CLAMP,
-             CONFIG_UGV_PID_DEADBAND);
+             CONFIG_UGV_MIN_DRIVE_PWM);
     ESP_LOGI(TAG, "kinematics: wheel=%.3fm track=%.3fm ppr=%d  m/tick=%.6f",
              s_kin.wheel_diameter_m, s_kin.track_width_m,
              s_kin.encoder_ppr, s_kin.meters_per_tick);
-    ESP_LOGI(TAG, "PID start: kp=%.3f ki=%.3f kd=%.3f clamp=±%d db=%d hb=%dms",
+    ESP_LOGI(TAG, "PID start: kp=%.3f ki=%.3f kd=%.3f clamp=±%d min_drive=%d hb=%dms",
              kp, ki, kd,
-             CONFIG_UGV_PID_OUTPUT_CLAMP, CONFIG_UGV_PID_DEADBAND,
+             CONFIG_UGV_PID_OUTPUT_CLAMP, CONFIG_UGV_MIN_DRIVE_PWM,
              CONFIG_UGV_HEARTBEAT_TIMEOUT_MS);
 
     s_snapshot_q = xQueueCreate(1, sizeof(ctrl_snapshot_t));
