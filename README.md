@@ -8,6 +8,19 @@ is platform-agnostic — pin assignments live in `main/Kconfig.projbuild`
 and a handful of source files. Independent rewrite of the stock Arduino
 firmware — see [Attribution](#attribution) below.
 
+## The rover
+
+The base platform is the [Waveshare WAVE ROVER](https://www.waveshare.com/wave-rover.htm)
+(ESP32-based 4WD chassis with the General Driver board). Two of the
+motors were upgraded to
+[N20 DC gear motors with magnetic Hall encoders](https://core-electronics.com.au/n20-dc-gear-motor-magnetic-hall-encoder-all-metal-gearbox-high-precision-reduction-motor-with-l-shaped-6pin-connector.html)
+(all-metal gearbox, L-shaped 6-pin connector) so the firmware can run
+closed-loop PID against real wheel measurements.
+
+| Front | Side |
+| --- | --- |
+| ![Rover, front view](resources/rover_front.jpg) | ![Rover, side view](resources/rover_side.jpg) |
+
 ## Build / flash / monitor
 
 ```bash

@@ -13,7 +13,10 @@ editable, not pushable). Talks to an upper computer (Pi 5, planned)
 over binary MQTT and/or UART.
 
 For build instructions, Kconfig reference, MQTT contract, and bring-up
-checklist, see `README.md` — don't duplicate it here.
+checklist, see `README.md` — don't duplicate it here. Host-side
+test/tuning scripts (cmd_vel injection over MQTT/UART, telemetry
+sniffing, OTA push, PID tuning) live in `tools/` — see `README.md`
+§Tools rather than re-deriving their flags.
 
 ## Build / verify
 
